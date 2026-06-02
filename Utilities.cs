@@ -8,6 +8,27 @@ namespace MockGenereator
 {
 	internal static class Utilities
 	{
+		public static string ResolveViewInterfaceName(this ITypeSymbol fieldType, bool input, bool output)
+		{
+			var existing = fieldType.AllInterfaces.FirstOrDefault(x =>
+				(!input || x.HasAttribute("MockGenerator", "InputAttribute")) &&
+				(!output || x.HasAttribute("MockGenerator", "OutputAttribute")));
+			if (existing != null)
+			{
+				return existing.QualifiedName();
+			}
+
+			if (fieldType is INamedTypeSymbol named &&
+				named.HasAttribute("MockGenerator", "GenerateViewInterfacesAttribute"))
+			{
+				var ns = named.ContainingNamespace.IsGlobalNamespace ? "" : named.ContainingNamespace + ".";
+				var suffix = (input && output) ? "" : (input ? "Input" : "Output");
+				return $"MockView.{ns}I{named.Name}{suffix}{named.TypeArguments.GenericArgs()}";
+			}
+
+			return null;
+		}
+
 		public static bool HasAttribute<T>(this T self, string @namespace, string name) where T : ISymbol
 		{
 			foreach (var attr in self.GetAttributes())
