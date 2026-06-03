@@ -374,39 +374,32 @@ namespace MockGenereator
 						}
 						var prop = field.ToPropertyName();
 						var generics = typeSymbol.TypeParameters.GenericsParams();
-						if (isInput && isOutput)
+						var inputName = isInput ? field.Type.ResolveViewInterfaceName(input: true, output: false) : null;
+						var outputName = isOutput ? field.Type.ResolveViewInterfaceName(input: false, output: true) : null;
+						if (isInput && isOutput && (inputName == null || outputName == null))
 						{
-							var inputName = field.Type.ResolveViewInterfaceName(input: true, output: false);
-							var outputName = field.Type.ResolveViewInterfaceName(input: false, output: true);
-							if (inputName == null || outputName == null)
-							{
-								Errors.IsNotInputAndOutput(context, field);
-							}
-							else
-							{
-								sb.Append($"\n		public {inputName} {prop}Input {{ get; set; }}");
-								sb.Append($"\n		{inputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {prop}Input;");
-								sb.Append($"\n		public {outputName} {prop}Output {{ get; set; }}");
-								sb.Append($"\n		{outputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Output{generics}.{prop} => {prop}Output;");
-							}
+							Errors.IsNotInputAndOutput(context, field);
+							continue;
 						}
-						else if (isInput)
+						if (isInput && !isOutput && inputName == null)
 						{
-							var typeName = field.Type.ResolveViewInterfaceName(input: true, output: false);
-							if (typeName == null)
-							{
-								Errors.IsNotInput(context, field);
-							}
-							sb.AppendFormat("\n		public {0} {1} {{ get; set; }}", typeName ?? field.Type.QualifiedName(), prop);
+							Errors.IsNotInput(context, field);
+							continue;
 						}
-						else if (isOutput)
+						if (isOutput && !isInput && outputName == null)
 						{
-							var typeName = field.Type.ResolveViewInterfaceName(input: false, output: true);
-							if (typeName == null)
-							{
-								Errors.IsNotOutput(context, field);
-							}
-							sb.AppendFormat("\n		public {0} {1} {{ get; set; }}", typeName ?? field.Type.QualifiedName(), prop);
+							Errors.IsNotOutput(context, field);
+							continue;
+						}
+						var mockType = field.Type.ResolveMockTypeName() ?? field.Type.QualifiedName();
+						sb.Append($"\n		public {mockType} {prop} {{ get; set; }}");
+						if (isInput)
+						{
+							sb.Append($"\n		{inputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {prop};");
+						}
+						if (isOutput)
+						{
+							sb.Append($"\n		{outputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Output{generics}.{prop} => {prop};");
 						}
 					}
 					else if (member is IPropertySymbol property)
@@ -418,7 +411,22 @@ namespace MockGenereator
 						var prop = property.Name;
 						var generics = typeSymbol.TypeParameters.GenericsParams();
 						var rawType = property.Type.QualifiedName();
-						sb.AppendFormat("\n		public {0} {1} {{ get; set; }}", rawType, prop);
+						var hasOutputSetter = property.SetMethod != null
+							&& property.SetMethod.HasAttribute("MockGenerator", "OutputAttribute");
+						if (hasOutputSetter)
+						{
+							var pascal = char.ToUpper(prop[0]) + prop.Substring(1);
+							var camel = char.ToLower(prop[0]) + prop.Substring(1);
+							var backing = "_" + camel + "Backing";
+							var onSet = "On" + pascal + "Set";
+							sb.Append($"\n		public System.Action<{rawType}> {onSet} {{ get; set; }}");
+							sb.Append($"\n		private {rawType} {backing};");
+							sb.Append($"\n		public {rawType} {prop} {{ get => {backing}; set {{ {backing} = value; {onSet}?.Invoke(value); }} }}");
+						}
+						else
+						{
+							sb.AppendFormat("\n		public {0} {1} {{ get; set; }}", rawType, prop);
+						}
 						if (property.HasInputGetter())
 						{
 							var inputName = property.Type.ResolveViewInterfaceName(input: true, output: false);

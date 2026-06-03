@@ -24,6 +24,17 @@ namespace MockGenereator
 			|| (p.SetMethod != null && p.SetMethod.HasAttribute("MockGenerator", "OutputAttribute"));
 		}
 
+		public static string ResolveMockTypeName(this ITypeSymbol fieldType)
+		{
+			if (fieldType is INamedTypeSymbol named &&
+				named.HasAttribute("MockGenerator", "GenerateViewInterfacesAttribute"))
+			{
+				var ns = named.ContainingNamespace.IsGlobalNamespace ? "" : named.ContainingNamespace + ".";
+				return $"MockView.{ns}Mock{named.Name}{named.TypeArguments.GenericArgs()}";
+			}
+			return null;
+		}
+
 		public static string ResolveViewInterfaceName(this ITypeSymbol fieldType, bool input, bool output)
 		{
 			var existing = fieldType.AllInterfaces.FirstOrDefault(x =>
