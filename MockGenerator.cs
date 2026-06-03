@@ -34,7 +34,7 @@ namespace MockGenereator
 
 					namespace MockGenerator
 					{
-						[AttributeUsage(AttributeTargets.Class | AttributeTargets.Interface | AttributeTargets.Field | AttributeTargets.Property | AttributeTargets.Event, AllowMultiple = false, Inherited = false)]
+						[AttributeUsage(AttributeTargets.Interface | AttributeTargets.Field | AttributeTargets.Method | AttributeTargets.Event, AllowMultiple = false, Inherited = false)]
 						internal sealed class InputAttribute : Attribute
 						{
 						}
@@ -45,7 +45,7 @@ namespace MockGenereator
 
 					namespace MockGenerator
 					{
-						[AttributeUsage(AttributeTargets.Class | AttributeTargets.Interface | AttributeTargets.Field | AttributeTargets.Property | AttributeTargets.Method | AttributeTargets.Event, AllowMultiple = false, Inherited = false)]
+						[AttributeUsage(AttributeTargets.Interface | AttributeTargets.Field | AttributeTargets.Method | AttributeTargets.Event, AllowMultiple = false, Inherited = false)]
 						internal sealed class OutputAttribute : Attribute
 						{
 						}
@@ -122,27 +122,32 @@ namespace MockGenereator
 			var typeSymbol = (INamedTypeSymbol)source.TargetSymbol;
 			var typeNode = (TypeDeclarationSyntax)source.TargetNode;
 
-			var @in = new List<ISymbol>();
-			var @out = new List<ISymbol>();
-			var inout = new List<ISymbol>();
+			// Diagnostics: [Input] on setter is invalid (setter is implicitly Output).
 			foreach (var member in typeSymbol.GetMembers())
 			{
-				if (member.HasAttribute("MockGenerator", "InputAttribute"))
+				if (member is IPropertySymbol prop && prop.SetMethod != null
+					&& prop.SetMethod.HasAttribute("MockGenerator", "InputAttribute"))
 				{
-					if (member.HasAttribute("MockGenerator", "OutputAttribute"))
-					{
-						inout.Add(member);
-					}
-					else
-					{
-						@in.Add(member);
-					}
-				}
-				else if (member.HasAttribute("MockGenerator", "OutputAttribute"))
-				{
-					@out.Add(member);
+					Errors.InputOnSetter(context, prop.SetMethod);
 				}
 			}
+
+			// Field bucketing (only fields go through partial class explicit-impl path).
+			var @in = new List<IFieldSymbol>();
+			var @out = new List<IFieldSymbol>();
+			var inout = new List<IFieldSymbol>();
+			foreach (var member in typeSymbol.GetMembers())
+			{
+				if (member is IFieldSymbol field)
+				{
+					var fi = field.HasAttribute("MockGenerator", "InputAttribute");
+					var fo = field.HasAttribute("MockGenerator", "OutputAttribute");
+					if (fi && fo) inout.Add(field);
+					else if (fi) @in.Add(field);
+					else if (fo) @out.Add(field);
+				}
+			}
+
 
 			RunGenerator(context, source, $"{Namespace(typeSymbol)}.I{typeSymbol.Name}Input.cs", (context, syntax, sb) =>
 			{
@@ -154,10 +159,11 @@ namespace MockGenereator
 					{
 				""");
 
-				foreach (var member in @in.Concat(inout))
+				foreach (var member in typeSymbol.GetMembers())
 				{
 					if (member is IFieldSymbol field)
 					{
+						if (!field.HasAttribute("MockGenerator", "InputAttribute")) continue;
 						var ifield = field.Type.ResolveViewInterfaceName(input: true, output: false);
 						if (ifield != null)
 						{
@@ -170,18 +176,18 @@ namespace MockGenereator
 					}
 					else if (member is IPropertySymbol property)
 					{
-						var iprop = property.Type.AllInterfaces.FirstOrDefault(static x => x.HasAttribute("MockGenerator", "InputAttribute"));
-						if (iprop != null)
-						{
-							sb.Append($"\n		{iprop.QualifiedName()} {property.Name} {{ get; }}");
-						}
-						else
-						{
-							sb.Append($"\n		{property.Type.QualifiedName()} {property.Name} {{ set; }}");
-						}
+						if (!property.HasInputGetter()) continue;
+						var iprop = property.Type.ResolveViewInterfaceName(input: true, output: false);
+						sb.Append($"\n		{iprop ?? property.Type.QualifiedName()} {property.Name} {{ get; }}");
+					}
+					else if (member is IMethodSymbol method && method.MethodKind == MethodKind.Ordinary)
+					{
+						if (!method.HasAttribute("MockGenerator", "InputAttribute")) continue;
+						sb.Append($"\n		{method.ReturnTypeName()} {method.Name}{method.MethodParams()};");
 					}
 					else if (member is IEventSymbol @event)
 					{
+						if (!@event.HasAttribute("MockGenerator", "InputAttribute")) continue;
 						sb.Append($"\n		event {@event.Type.QualifiedName()} {@event.Name};");
 					}
 				}
@@ -203,10 +209,11 @@ namespace MockGenereator
 					{
 				""");
 
-				foreach (var member in @out.Concat(inout))
+				foreach (var member in typeSymbol.GetMembers())
 				{
 					if (member is IFieldSymbol field)
 					{
+						if (!field.HasAttribute("MockGenerator", "OutputAttribute")) continue;
 						var ifield = field.Type.ResolveViewInterfaceName(input: false, output: true);
 						if (ifield != null)
 						{
@@ -217,25 +224,35 @@ namespace MockGenereator
 							Errors.IsNotOutput(context, field);
 						}
 					}
-					else if (member is IMethodSymbol method)
+					else if (member is IMethodSymbol method && method.MethodKind == MethodKind.Ordinary)
 					{
-						sb.Append($"\n		{method.ReturnTypeName()} {method.Name}(");
-						foreach (var (param, index) in method.Parameters.Select(static (param, index) => (param, index)))
-						{
-							if (index != 0)
-							{
-								sb.Append(", ");
-							}
-							sb.Append($"{param.Type.QualifiedName()} {param.Name}");
-						}
-						sb.Append(");");
+						if (!method.HasAttribute("MockGenerator", "OutputAttribute")) continue;
+						sb.Append($"\n		{method.ReturnTypeName()} {method.Name}{method.MethodParams()};");
 					}
 					else if (member is IPropertySymbol property)
 					{
-						sb.Append($"\n		{property.Type.QualifiedName()} {property.Name} {{ set; }}");
+						if (!property.IsTracked())
+						{
+							continue;
+						}
+						if (property.HasOutputGetter())
+						{
+							// [Output] getter: composition pull. Setter is suppressed to avoid same-name
+							// duplicate declaration in the same interface.
+							var iprop = property.Type.ResolveViewInterfaceName(input: false, output: true);
+							sb.Append($"\n		{iprop ?? property.Type.QualifiedName()} {property.Name} {{ get; }}");
+						}
+						else if (property.SetMethod != null)
+						{
+							sb.Append($"\n		{property.Type.QualifiedName()} {property.Name} {{ set; }}");
+						}
 					}
 					else if (member is IEventSymbol @event)
 					{
+						if (!@event.HasAttribute("MockGenerator", "OutputAttribute"))
+						{
+							continue;
+						}
 						sb.Append($"\n		event {@event.Type.QualifiedName()} {@event.Name};");
 					}
 				}
@@ -278,47 +295,38 @@ namespace MockGenereator
 					{
 				""");
 
-				foreach (var member in @in)
+				foreach (var field in @in)
 				{
-					if (member is IFieldSymbol field)
+					var ifield = field.Type.ResolveViewInterfaceName(input: true, output: false);
+					if (ifield != null)
 					{
-						var ifield = field.Type.ResolveViewInterfaceName(input: true, output: false);
-						if (ifield != null)
-						{
-							sb.Append($"\n		public {ifield} {field.ToPropertyName()} => {field.Name};");
-						}
+						sb.Append($"\n		public {ifield} {field.ToPropertyName()} => {field.Name};");
 					}
 				}
 
-				foreach (var member in @out)
+				foreach (var field in @out)
 				{
-					if (member is IFieldSymbol field)
+					var ifield = field.Type.ResolveViewInterfaceName(input: false, output: true);
+					if (ifield != null)
 					{
-						var ifield = field.Type.ResolveViewInterfaceName(input: false, output: true);
-						if (ifield != null)
-						{
-							sb.Append($"\n		public {ifield} {field.ToPropertyName()} => {field.Name};");
-						}
+						sb.Append($"\n		public {ifield} {field.ToPropertyName()} => {field.Name};");
 					}
 				}
 
-				foreach (var member in inout)
+				foreach (var field in inout)
 				{
-					if (member is IFieldSymbol field)
+					var inputName = field.Type.ResolveViewInterfaceName(input: true, output: false);
+					var outputName = field.Type.ResolveViewInterfaceName(input: false, output: true);
+					if (inputName != null && outputName != null)
 					{
-						var inputName = field.Type.ResolveViewInterfaceName(input: true, output: false);
-						var outputName = field.Type.ResolveViewInterfaceName(input: false, output: true);
-						if (inputName != null && outputName != null)
-						{
-							var prop = field.ToPropertyName();
-							var generics = typeSymbol.TypeParameters.GenericsParams();
-							sb.Append($"\n		{inputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {field.Name};");
-							sb.Append($"\n		{outputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Output{generics}.{prop} => {field.Name};");
-						}
-						else
-						{
-							Errors.IsNotInputAndOutput(context, field);
-						}
+						var prop = field.ToPropertyName();
+						var generics = typeSymbol.TypeParameters.GenericsParams();
+						sb.Append($"\n		{inputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {field.Name};");
+						sb.Append($"\n		{outputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Output{generics}.{prop} => {field.Name};");
+					}
+					else
+					{
+						Errors.IsNotInputAndOutput(context, field);
 					}
 				}
 
@@ -356,14 +364,14 @@ namespace MockGenereator
 
 				foreach (var member in typeSymbol.GetMembers())
 				{
-					var isInput = member.HasAttribute("MockGenerator", "InputAttribute");
-					var isOutput = member.HasAttribute("MockGenerator", "OutputAttribute");
-					if (!isInput && !isOutput)
-					{
-						continue;
-					}
 					if (member is IFieldSymbol field)
 					{
+						var isInput = field.HasAttribute("MockGenerator", "InputAttribute");
+						var isOutput = field.HasAttribute("MockGenerator", "OutputAttribute");
+						if (!isInput && !isOutput)
+						{
+							continue;
+						}
 						var prop = field.ToPropertyName();
 						var generics = typeSymbol.TypeParameters.GenericsParams();
 						if (isInput && isOutput)
@@ -403,19 +411,49 @@ namespace MockGenereator
 					}
 					else if (member is IPropertySymbol property)
 					{
-						sb.AppendFormat("\n		public {0} {1} {{ get; set; }}", property.Type.QualifiedName(), property.Name);
+						if (!property.IsTracked())
+						{
+							continue;
+						}
+						var prop = property.Name;
+						var generics = typeSymbol.TypeParameters.GenericsParams();
+						var rawType = property.Type.QualifiedName();
+						sb.AppendFormat("\n		public {0} {1} {{ get; set; }}", rawType, prop);
+						if (property.HasInputGetter())
+						{
+							var inputName = property.Type.ResolveViewInterfaceName(input: true, output: false);
+							if (inputName != null && inputName != rawType)
+							{
+								sb.Append($"\n		{inputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {prop};");
+							}
+						}
+						if (property.HasOutputGetter())
+						{
+							var outputName = property.Type.ResolveViewInterfaceName(input: false, output: true);
+							if (outputName != null && outputName != rawType)
+							{
+								sb.Append($"\n		{outputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Output{generics}.{prop} => {prop};");
+							}
+						}
 					}
-					else if (member is IMethodSymbol method)
+					else if (member is IMethodSymbol method && method.MethodKind == MethodKind.Ordinary)
 					{
+						if (!method.HasAttribute("MockGenerator", "InputAttribute")
+							&& !method.HasAttribute("MockGenerator", "OutputAttribute"))
+						{
+							continue;
+						}
 						sb.EmitMockMethodMember("\t\t", method);
 					}
 					else if (member is IEventSymbol @event)
 					{
+						var isInput = @event.HasAttribute("MockGenerator", "InputAttribute");
+						var isOutput = @event.HasAttribute("MockGenerator", "OutputAttribute");
+						if (!isInput && !isOutput)
+						{
+							continue;
+						}
 						sb.EmitMockEventMember("\t\t", @event);
-					}
-					else
-					{
-						throw new Exception($"unsupported member type {member.GetType()}");
 					}
 				}
 

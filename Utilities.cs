@@ -8,6 +8,22 @@ namespace MockGenereator
 {
 	internal static class Utilities
 	{
+		public static bool HasInputGetter(this IPropertySymbol p)
+		{
+			return p.GetMethod != null && p.GetMethod.HasAttribute("MockGenerator", "InputAttribute");
+		}
+
+		public static bool HasOutputGetter(this IPropertySymbol p)
+		{
+			return p.GetMethod != null && p.GetMethod.HasAttribute("MockGenerator", "OutputAttribute");
+		}
+
+		public static bool IsTracked(this IPropertySymbol p)
+		{
+			return p.HasInputGetter() || p.HasOutputGetter()
+			|| (p.SetMethod != null && p.SetMethod.HasAttribute("MockGenerator", "OutputAttribute"));
+		}
+
 		public static string ResolveViewInterfaceName(this ITypeSymbol fieldType, bool input, bool output)
 		{
 			var existing = fieldType.AllInterfaces.FirstOrDefault(x =>

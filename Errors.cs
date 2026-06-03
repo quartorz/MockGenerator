@@ -74,5 +74,21 @@ namespace MockGenereator
 			);
 			context.ReportDiagnostic(diagnostic);
 		}
+
+		public static void InputOnSetter(SourceProductionContext context, IMethodSymbol setter)
+		{
+			var diagnostic = Diagnostic.Create(
+				new DiagnosticDescriptor(
+					id: "MockGen005",
+					title: "Source Generator Error",
+					messageFormat: "\"InputAttribute\" cannot be applied to a property setter (setter is implicitly Output).",
+					category: "SourceGenerator",
+					DiagnosticSeverity.Error,
+					isEnabledByDefault: true),
+				setter.Locations.FirstOrDefault() ?? Location.None
+			);
+			context.ReportDiagnostic(diagnostic);
+		}
+
 	}
 }
