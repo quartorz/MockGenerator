@@ -1,4 +1,4 @@
-﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using MockGenerator;
@@ -64,61 +64,53 @@ namespace MockGenereator
 					""");
 			});
 
-			//var source = context.SyntaxProvider.CreateSyntaxProvider(
-			//	static (node, token) => true,
-			//	static (ctx, token) =>
-			//	{
-			//		ctx.Node.SyntaxTree.
-			//		return 0;				
-			//	});
+			var viewInterfaces = context.SyntaxProvider.ForAttributeWithMetadataName(
+				"MockGenerator.GenerateViewInterfacesAttribute",
+				static (node, token) => true,
+				TransformViewInterfaces).WithTrackingName("MockGenereator.GenerateViewInterfaces");
 
-			context.RegisterSourceOutput(
-				context.SyntaxProvider.ForAttributeWithMetadataName(
-					"MockGenerator.GenerateViewInterfacesAttribute",
-					static (node, token) => true,
-					static (ctx, token) => ctx),
-				GenerateViewInterfaces);
-			//context.RegisterSourceOutput(
-			//	context.SyntaxProvider.ForAttributeWithMetadataName(
-			//		"MockGenerator.GenerateViewInterfacesAttribute",
-			//		static (node, token) => true,
-			//		Transform),
-			//	(_, _) => { });
+			context.RegisterSourceOutput(viewInterfaces, static (spc, result) => Replay(spc, result));
 
-			context.RegisterSourceOutput(
-				context.SyntaxProvider.ForAttributeWithMetadataName(
-					"MockGenerator.GenerateMockViewAttribute",
-					static (node, token) => true,
-					static (ctx, token) => ctx),
-				GenerateMockView);
+			var mockViews = context.SyntaxProvider.ForAttributeWithMetadataName(
+				"MockGenerator.GenerateMockViewAttribute",
+				static (node, token) => true,
+				TransformMockView).WithTrackingName("MockGenereator.GenerateMockView");
+
+			context.RegisterSourceOutput(mockViews, static (spc, result) => Replay(spc, result));
 		}
 
-		static Source Transform(GeneratorAttributeSyntaxContext source, CancellationToken token)
+		static void Replay(SourceProductionContext context, GenerationResult result)
 		{
-			var typeSymbol = (INamedTypeSymbol)source.TargetSymbol;
-			var typeNode = (TypeDeclarationSyntax)source.TargetNode;
-			return new Source(
-				typeSymbol.ContainingNamespace.IsGlobalNamespace ? null : typeSymbol.ContainingNamespace.ToString(), typeSymbol.Name, null, [new("", "b")], [], [], [] ,[]);
+			foreach (var diag in result.Diagnostics)
+			{
+				context.ReportDiagnostic(diag.ToDiagnostic());
+			}
+			foreach (var file in result.Files)
+			{
+				context.AddSource(file.HintName, file.Content);
+			}
 		}
 
-		static void RunGenerator(SourceProductionContext context, GeneratorAttributeSyntaxContext source,
-			string hintName, Action<SourceProductionContext, GeneratorAttributeSyntaxContext, StringBuilder> generator)
+		static void Emit(List<SourceFile> files, List<DiagnosticInfo> diagnostics, string hintName, Action<StringBuilder> writer)
 		{
 			using var _ = StringBuilderHolder.Get(out var sb);
 			try
 			{
-				generator(context, source, sb);
+				writer(sb);
 			}
 			catch (Exception e)
 			{
-				Errors.Unexpected(context, e);
+				diagnostics.Add(Errors.Unexpected(e));
 				sb.AppendFormat("\n#error {0}", e.Message);
 			}
-			context.AddSource(hintName, sb.ToString());
+			files.Add(new SourceFile(hintName, sb.ToString()));
 		}
 
-		static void GenerateViewInterfaces(SourceProductionContext context, GeneratorAttributeSyntaxContext source)
+		static GenerationResult TransformViewInterfaces(GeneratorAttributeSyntaxContext source, CancellationToken token)
 		{
+			var files = new List<SourceFile>();
+			var diagnostics = new List<DiagnosticInfo>();
+
 			var typeSymbol = (INamedTypeSymbol)source.TargetSymbol;
 			var typeNode = (TypeDeclarationSyntax)source.TargetNode;
 
@@ -128,7 +120,7 @@ namespace MockGenereator
 				if (member is IPropertySymbol prop && prop.SetMethod != null
 					&& prop.SetMethod.HasAttribute("MockGenerator", "InputAttribute"))
 				{
-					Errors.InputOnSetter(context, prop.SetMethod);
+					diagnostics.Add(Errors.InputOnSetter(prop.SetMethod));
 				}
 			}
 
@@ -148,8 +140,7 @@ namespace MockGenereator
 				}
 			}
 
-
-			RunGenerator(context, source, $"{Namespace(typeSymbol)}.I{typeSymbol.Name}Input.cs", (context, syntax, sb) =>
+			Emit(files, diagnostics, $"{Namespace(typeSymbol)}.I{typeSymbol.Name}Input.cs", sb =>
 			{
 				sb.Append($$"""
 				namespace {{Namespace(typeSymbol)}}
@@ -174,7 +165,7 @@ namespace MockGenereator
 						}
 						else
 						{
-							Errors.IsNotInput(context, field);
+							diagnostics.Add(Errors.IsNotInput(field));
 						}
 					}
 					else if (member is IPropertySymbol property)
@@ -202,7 +193,7 @@ namespace MockGenereator
 				""");
 			});
 
-			RunGenerator(context, source, $"{Namespace(typeSymbol)}.I{typeSymbol.Name}Output.cs", (context, source, sb) =>
+			Emit(files, diagnostics, $"{Namespace(typeSymbol)}.I{typeSymbol.Name}Output.cs", sb =>
 			{
 				sb.Append($$"""
 				namespace {{Namespace(typeSymbol)}}
@@ -227,7 +218,7 @@ namespace MockGenereator
 						}
 						else
 						{
-							Errors.IsNotOutput(context, field);
+							diagnostics.Add(Errors.IsNotOutput(field));
 						}
 					}
 					else if (member is IMethodSymbol method && method.MethodKind == MethodKind.Ordinary)
@@ -270,7 +261,7 @@ namespace MockGenereator
 				""");
 			});
 
-			RunGenerator(context, source, $"{(typeSymbol.ContainingNamespace.IsGlobalNamespace ? "global" : typeSymbol.ContainingNamespace)}.I{typeSymbol.Name}.cs", (context, source, sb) =>
+			Emit(files, diagnostics, $"{(typeSymbol.ContainingNamespace.IsGlobalNamespace ? "global" : typeSymbol.ContainingNamespace)}.I{typeSymbol.Name}.cs", sb =>
 			{
 				sb.Append($$"""
 				namespace {{Namespace(typeSymbol)}}
@@ -287,7 +278,7 @@ namespace MockGenereator
 				""");
 			});
 
-			RunGenerator(context, source, $"{(typeSymbol.ContainingNamespace.IsGlobalNamespace ? "global" : typeSymbol.ContainingNamespace)}.{typeSymbol.Name}.cs", (context, source, sb) =>
+			Emit(files, diagnostics, $"{(typeSymbol.ContainingNamespace.IsGlobalNamespace ? "global" : typeSymbol.ContainingNamespace)}.{typeSymbol.Name}.cs", sb =>
 			{
 				if (!typeSymbol.ContainingNamespace.IsGlobalNamespace)
 				{
@@ -335,7 +326,7 @@ namespace MockGenereator
 					}
 					else
 					{
-						Errors.IsNotInputAndOutput(context, field);
+						diagnostics.Add(Errors.IsNotInputAndOutput(field));
 					}
 				}
 
@@ -352,14 +343,19 @@ namespace MockGenereator
 					""");
 				}
 			});
+
+			return new GenerationResult(files.ToArray(), diagnostics.ToArray());
 		}
 
-		static void GenerateMockView(SourceProductionContext context, GeneratorAttributeSyntaxContext source)
+		static GenerationResult TransformMockView(GeneratorAttributeSyntaxContext source, CancellationToken token)
 		{
+			var files = new List<SourceFile>();
+			var diagnostics = new List<DiagnosticInfo>();
+
 			var typeSymbol = (INamedTypeSymbol)source.TargetSymbol;
 			var typeNode = (TypeDeclarationSyntax)source.TargetNode;
 
-			RunGenerator(context, source, $"{Namespace(typeSymbol)}.Mock{typeSymbol.Name}.cs", (context, source, sb) =>
+			Emit(files, diagnostics, $"{Namespace(typeSymbol)}.Mock{typeSymbol.Name}.cs", sb =>
 			{
 				sb.Append($$"""
 					namespace {{Namespace(typeSymbol)}}
@@ -387,17 +383,17 @@ namespace MockGenereator
 						var outputName = isOutput ? field.Type.ResolveViewInterfaceName(input: false, output: true) : null;
 						if (isInput && isOutput && (inputName == null || outputName == null))
 						{
-							Errors.IsNotInputAndOutput(context, field);
+							diagnostics.Add(Errors.IsNotInputAndOutput(field));
 							continue;
 						}
 						if (isInput && !isOutput && inputName == null)
 						{
-							Errors.IsNotInput(context, field);
+							diagnostics.Add(Errors.IsNotInput(field));
 							continue;
 						}
 						if (isOutput && !isInput && outputName == null)
 						{
-							Errors.IsNotOutput(context, field);
+							diagnostics.Add(Errors.IsNotOutput(field));
 							continue;
 						}
 						var resolvedMock = field.Type.ResolveMockTypeName();
@@ -482,6 +478,8 @@ namespace MockGenereator
 					}
 					""");
 			});
+
+			return new GenerationResult(files.ToArray(), diagnostics.ToArray());
 		}
 
 		static string Namespace(ISymbol symbol)

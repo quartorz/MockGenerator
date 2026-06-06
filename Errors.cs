@@ -1,94 +1,64 @@
-﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis;
+using MockGenerator;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 
 namespace MockGenereator
 {
 	internal static class Errors
 	{
-		public static void Unexpected(SourceProductionContext context, Exception exception)
+		public static DiagnosticInfo Unexpected(Exception exception)
 		{
-			var diagnostic = Diagnostic.Create(
-				new DiagnosticDescriptor(
-					id: "MockGen001",
-					title: "Source Generator Unexpected Error",
-					messageFormat: "An error occurred: {0}",
-					category: "SourceGenerator",
-					DiagnosticSeverity.Error,
-					isEnabledByDefault: true),
-				Location.None,
-				exception.Message
-			);
-			context.ReportDiagnostic(diagnostic);
+			return new DiagnosticInfo(
+				id: "MockGen001",
+				title: "Source Generator Unexpected Error",
+				messageFormat: "An error occurred: {0}",
+				severity: DiagnosticSeverity.Error,
+				location: null,
+				messageArgs: new[] { exception.Message });
 		}
 
-		public static void IsNotInput(SourceProductionContext context, IFieldSymbol field)
+		public static DiagnosticInfo IsNotInput(IFieldSymbol field)
 		{
-			var diagnostic = Diagnostic.Create(
-				new DiagnosticDescriptor(
-					id: "MockGen002",
-					title: "Source Generator Error",
-					messageFormat: "Field \"{0}\" (type: \"{1}\") must implement an interface with the \"InputAttribute\".",
-					category: "SourceGenerator",
-					DiagnosticSeverity.Error,
-					isEnabledByDefault: true),
-				field.Locations.FirstOrDefault(),
-				field.Name,
-				field.Type
-			);
-			context.ReportDiagnostic(diagnostic);
+			return new DiagnosticInfo(
+				id: "MockGen002",
+				title: "Source Generator Error",
+				messageFormat: "Field \"{0}\" (type: \"{1}\") must implement an interface with the \"InputAttribute\".",
+				severity: DiagnosticSeverity.Error,
+				location: LocationInfo.From(field),
+				messageArgs: new[] { field.Name, field.Type.ToString() });
 		}
 
-		public static void IsNotOutput(SourceProductionContext context, IFieldSymbol field)
+		public static DiagnosticInfo IsNotOutput(IFieldSymbol field)
 		{
-			var diagnostic = Diagnostic.Create(
-				new DiagnosticDescriptor(
-					id: "MockGen003",
-					title: "Source Generator Error",
-					messageFormat: "Field \"{0}\" (type: \"{1}\") must implement an interface with the \"OutputAttribute\".",
-					category: "SourceGenerator",
-					DiagnosticSeverity.Error,
-					isEnabledByDefault: true),
-				field.Locations.FirstOrDefault() ?? Location.None,
-				field.Name,
-				field.Type
-			);
-			context.ReportDiagnostic(diagnostic);
+			return new DiagnosticInfo(
+				id: "MockGen003",
+				title: "Source Generator Error",
+				messageFormat: "Field \"{0}\" (type: \"{1}\") must implement an interface with the \"OutputAttribute\".",
+				severity: DiagnosticSeverity.Error,
+				location: LocationInfo.From(field),
+				messageArgs: new[] { field.Name, field.Type.ToString() });
 		}
 
-		public static void IsNotInputAndOutput(SourceProductionContext context, IFieldSymbol field)
+		public static DiagnosticInfo IsNotInputAndOutput(IFieldSymbol field)
 		{
-			var diagnostic = Diagnostic.Create(
-				new DiagnosticDescriptor(
-					id: "MockGen004",
-					title: "Source Generator Error",
-					messageFormat: "Field \"{0}\" (type: \"{1}\") must implement an interface with the \"InputAttribute\" and \"OutputAttribute\".",
-					category: "SourceGenerator",
-					DiagnosticSeverity.Error,
-					isEnabledByDefault: true),
-				field.Locations.FirstOrDefault(),
-				field.Name,
-				field.Type
-			);
-			context.ReportDiagnostic(diagnostic);
+			return new DiagnosticInfo(
+				id: "MockGen004",
+				title: "Source Generator Error",
+				messageFormat: "Field \"{0}\" (type: \"{1}\") must implement an interface with the \"InputAttribute\" and \"OutputAttribute\".",
+				severity: DiagnosticSeverity.Error,
+				location: LocationInfo.From(field),
+				messageArgs: new[] { field.Name, field.Type.ToString() });
 		}
 
-		public static void InputOnSetter(SourceProductionContext context, IMethodSymbol setter)
+		public static DiagnosticInfo InputOnSetter(IMethodSymbol setter)
 		{
-			var diagnostic = Diagnostic.Create(
-				new DiagnosticDescriptor(
-					id: "MockGen005",
-					title: "Source Generator Error",
-					messageFormat: "\"InputAttribute\" cannot be applied to a property setter (setter is implicitly Output).",
-					category: "SourceGenerator",
-					DiagnosticSeverity.Error,
-					isEnabledByDefault: true),
-				setter.Locations.FirstOrDefault() ?? Location.None
-			);
-			context.ReportDiagnostic(diagnostic);
+			return new DiagnosticInfo(
+				id: "MockGen005",
+				title: "Source Generator Error",
+				messageFormat: "\"InputAttribute\" cannot be applied to a property setter (setter is implicitly Output).",
+				severity: DiagnosticSeverity.Error,
+				location: LocationInfo.From(setter),
+				messageArgs: Array.Empty<string>());
 		}
-
 	}
 }
