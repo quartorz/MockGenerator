@@ -400,8 +400,10 @@ namespace MockGenereator
 							Errors.IsNotOutput(context, field);
 							continue;
 						}
-						var mockType = field.Type.ResolveMockTypeName() ?? field.Type.QualifiedName();
-						sb.Append($"\n		public {mockType} {prop} {{ get; set; }}");
+						var resolvedMock = field.Type.ResolveMockTypeName();
+						var mockType = resolvedMock ?? field.Type.QualifiedName();
+						var initializer = resolvedMock != null ? $" = new {resolvedMock}();" : "";
+						sb.Append($"\n		public {mockType} {prop} {{ get; set; }}{initializer}");
 						if (isInput)
 						{
 							sb.Append($"\n		{inputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {prop};");

@@ -27,7 +27,7 @@ namespace MockGenereator
 		public static string ResolveMockTypeName(this ITypeSymbol fieldType)
 		{
 			if (fieldType is INamedTypeSymbol named &&
-				named.HasAttribute("MockGenerator", "GenerateViewInterfacesAttribute"))
+				named.HasAttribute("MockGenerator", "GenerateMockViewAttribute"))
 			{
 				var ns = named.ContainingNamespace.IsGlobalNamespace ? "" : named.ContainingNamespace + ".";
 				return $"MockView.{ns}Mock{named.Name}{named.TypeArguments.GenericArgs()}";
