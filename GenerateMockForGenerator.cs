@@ -134,7 +134,16 @@ namespace MockGenereator
 					case IPropertySymbol p:
 						if (p.IsIndexer) break;
 						if (!seenProperty.Add(p.Name)) break;
-						sb.Append($"\n{i}public {p.Type.QualifiedName()} {p.Name} {{ get; set; }}");
+						{
+							var rawType = p.Type.QualifiedName();
+							var pascal = char.ToUpper(p.Name[0]) + p.Name.Substring(1);
+							var camel = char.ToLower(p.Name[0]) + p.Name.Substring(1);
+							var backing = "_" + camel + "Backing";
+							var onSet = "On" + pascal + "Set";
+							sb.Append($"\n{i}public System.Action<{rawType}> {onSet} {{ get; set; }}");
+							sb.Append($"\n{i}private {rawType} {backing};");
+							sb.Append($"\n{i}public {rawType} {p.Name} {{ get => {backing}; set {{ {backing} = value; {onSet}?.Invoke(value); }} }}");
+						}
 						break;
 					case IMethodSymbol m when m.MethodKind == MethodKind.Ordinary:
 						if (!seenMethodFunc.Add(m.Name + "Func"))

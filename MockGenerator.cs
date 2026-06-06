@@ -154,6 +154,9 @@ namespace MockGenereator
 				sb.Append($$"""
 				namespace {{Namespace(typeSymbol)}}
 				{
+					/// <summary>
+					/// <see cref="{{typeSymbol.ToCref()}}"/>
+					/// </summary>
 					[MockGenerator.Input]
 					public interface I{{typeSymbol.Name}}Input{{typeSymbol.TypeParameters.GenericsParams()}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
 					{
@@ -204,6 +207,9 @@ namespace MockGenereator
 				sb.Append($$"""
 				namespace {{Namespace(typeSymbol)}}
 				{
+					/// <summary>
+					/// <see cref="{{typeSymbol.ToCref()}}"/>
+					/// </summary>
 					[MockGenerator.Output]
 					public interface I{{typeSymbol.Name}}Output{{typeSymbol.TypeParameters.GenericsParams()}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
 					{
@@ -269,6 +275,9 @@ namespace MockGenereator
 				sb.Append($$"""
 				namespace {{Namespace(typeSymbol)}}
 				{
+					/// <summary>
+					/// <see cref="{{typeSymbol.ToCref()}}"/>
+					/// </summary>
 					public interface I{{typeSymbol.Name}}{{typeSymbol.TypeParameters.GenericsParams()}} :
 						I{{typeSymbol.Name}}Input{{typeSymbol.TypeParameters.GenericsParams()}},
 						I{{typeSymbol.Name}}Output{{typeSymbol.TypeParameters.GenericsParams()}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
