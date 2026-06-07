@@ -97,11 +97,8 @@ namespace MockGenereator
 		{
 			using var _ = StringBuilderHolder.Get(out var sb);
 
-			if (symbol.ContainingNamespace.IsGlobalNamespace)
-			{
-				sb.Append("global::");
-			}
-			else
+			sb.Append("global::");
+			if (!symbol.ContainingNamespace.IsGlobalNamespace)
 			{
 				sb.Append(symbol.ContainingNamespace);
 				sb.Append('.');
