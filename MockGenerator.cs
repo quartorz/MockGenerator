@@ -37,6 +37,7 @@ namespace MockGenereator
 						[AttributeUsage(AttributeTargets.Interface | AttributeTargets.Field | AttributeTargets.Method | AttributeTargets.Event, AllowMultiple = false, Inherited = false)]
 						internal sealed class InputAttribute : Attribute
 						{
+							public Type As { get; set; }
 						}
 					}
 					""");
@@ -48,6 +49,7 @@ namespace MockGenereator
 						[AttributeUsage(AttributeTargets.Interface | AttributeTargets.Field | AttributeTargets.Method | AttributeTargets.Event, AllowMultiple = false, Inherited = false)]
 						internal sealed class OutputAttribute : Attribute
 						{
+							public Type As { get; set; }
 						}
 					}
 					""");
@@ -114,6 +116,8 @@ namespace MockGenereator
 			var typeSymbol = (INamedTypeSymbol)source.TargetSymbol;
 			var typeNode = (TypeDeclarationSyntax)source.TargetNode;
 
+			ValidateAsPlacement(typeSymbol, diagnostics);
+
 			// Diagnostics: [Input] on setter is invalid (setter is implicitly Output).
 			foreach (var member in typeSymbol.GetMembers())
 			{
@@ -123,6 +127,9 @@ namespace MockGenereator
 					diagnostics.Add(Errors.InputOnSetter(prop.SetMethod));
 				}
 			}
+
+			var directInputIfaces = Utilities.DirectAttributedInterfaces(typeSymbol, input: true, output: false);
+			var directOutputIfaces = Utilities.DirectAttributedInterfaces(typeSymbol, input: false, output: true);
 
 			// Field bucketing (only fields go through partial class explicit-impl path).
 			var @in = new List<IFieldSymbol>();
@@ -149,7 +156,7 @@ namespace MockGenereator
 					/// <see cref="{{typeSymbol.ToCref()}}"/>
 					/// </summary>
 					[MockGenerator.Input]
-					public interface I{{typeSymbol.Name}}Input{{typeSymbol.TypeParameters.GenericsParams()}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
+					public interface I{{typeSymbol.Name}}Input{{typeSymbol.TypeParameters.GenericsParams()}}{{InheritanceClause(directInputIfaces)}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
 					{
 				""");
 
@@ -158,14 +165,10 @@ namespace MockGenereator
 					if (member is IFieldSymbol field)
 					{
 						if (!field.HasAttribute("MockGenerator", "InputAttribute")) continue;
-						var ifield = field.Type.ResolveViewInterfaceName(input: true, output: false);
+						var ifield = ResolveFieldInterface(field, input: true, output: false, diagnostics);
 						if (ifield != null)
 						{
 							sb.Append($"\n		{ifield} {field.ToPropertyName()} {{ get; }}");
-						}
-						else
-						{
-							diagnostics.Add(Errors.IsNotInput(field));
 						}
 					}
 					else if (member is IPropertySymbol property)
@@ -202,7 +205,7 @@ namespace MockGenereator
 					/// <see cref="{{typeSymbol.ToCref()}}"/>
 					/// </summary>
 					[MockGenerator.Output]
-					public interface I{{typeSymbol.Name}}Output{{typeSymbol.TypeParameters.GenericsParams()}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
+					public interface I{{typeSymbol.Name}}Output{{typeSymbol.TypeParameters.GenericsParams()}}{{InheritanceClause(directOutputIfaces)}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
 					{
 				""");
 
@@ -211,14 +214,10 @@ namespace MockGenereator
 					if (member is IFieldSymbol field)
 					{
 						if (!field.HasAttribute("MockGenerator", "OutputAttribute")) continue;
-						var ifield = field.Type.ResolveViewInterfaceName(input: false, output: true);
+						var ifield = ResolveFieldInterface(field, input: false, output: true, diagnostics);
 						if (ifield != null)
 						{
 							sb.Append($"\n		{ifield} {field.ToPropertyName()} {{ get; }}");
-						}
-						else
-						{
-							diagnostics.Add(Errors.IsNotOutput(field));
 						}
 					}
 					else if (member is IMethodSymbol method && method.MethodKind == MethodKind.Ordinary)
@@ -324,10 +323,6 @@ namespace MockGenereator
 						sb.Append($"\n		{inputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {field.Name};");
 						sb.Append($"\n		{outputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Output{generics}.{prop} => {field.Name};");
 					}
-					else
-					{
-						diagnostics.Add(Errors.IsNotInputAndOutput(field));
-					}
 				}
 
 				sb.Append("""
@@ -355,6 +350,19 @@ namespace MockGenereator
 			var typeSymbol = (INamedTypeSymbol)source.TargetSymbol;
 			var typeNode = (TypeDeclarationSyntax)source.TargetNode;
 
+			ValidateAsPlacement(typeSymbol, diagnostics);
+
+			var hasViewIfaces = typeSymbol.HasAttribute("MockGenerator", "GenerateViewInterfacesAttribute");
+			var directInputIfaces = Utilities.DirectAttributedInterfaces(typeSymbol, input: true, output: false);
+			var directOutputIfaces = Utilities.DirectAttributedInterfaces(typeSymbol, input: false, output: true);
+			var inputCollected = Utilities.CollectAttributedInterfaces(typeSymbol, input: true, output: false);
+			var outputCollected = Utilities.CollectAttributedInterfaces(typeSymbol, input: false, output: true);
+
+			// Multi-source rule: in two-attr mode, the umbrella ICInput is itself a source, so 1+ direct iface = multi.
+			// In alone mode, 2+ direct ifaces = multi.
+			bool inputMulti = hasViewIfaces ? directInputIfaces.Count >= 1 : directInputIfaces.Count >= 2;
+			bool outputMulti = hasViewIfaces ? directOutputIfaces.Count >= 1 : directOutputIfaces.Count >= 2;
+
 			Emit(files, diagnostics, $"{Namespace(typeSymbol)}.Mock{typeSymbol.Name}.cs", sb =>
 			{
 				sb.Append($$"""
@@ -363,7 +371,7 @@ namespace MockGenereator
 						/// <summary>
 						/// <see cref="{{typeSymbol.ToCref()}}"/>
 						/// </summary>
-						public partial class Mock{{typeSymbol.Name}}{{typeSymbol.TypeParameters.GenericsParams()}} : I{{typeSymbol.Name}}{{typeSymbol.TypeParameters.GenericsParams()}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
+						public partial class Mock{{typeSymbol.Name}}{{typeSymbol.TypeParameters.GenericsParams()}}{{MockImplementsClause(typeSymbol, hasViewIfaces, directInputIfaces, directOutputIfaces)}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
 						{
 					""");
 
@@ -379,34 +387,37 @@ namespace MockGenereator
 						}
 						var prop = field.ToPropertyName();
 						var generics = typeSymbol.TypeParameters.GenericsParams();
-						var inputName = isInput ? field.Type.ResolveViewInterfaceName(input: true, output: false) : null;
-						var outputName = isOutput ? field.Type.ResolveViewInterfaceName(input: false, output: true) : null;
-						if (isInput && isOutput && (inputName == null || outputName == null))
+						string inputName = null, outputName = null;
+						if (isInput && isOutput)
 						{
-							diagnostics.Add(Errors.IsNotInputAndOutput(field));
-							continue;
+							inputName = ResolveFieldInterface(field, input: true, output: false, diagnostics);
+							outputName = ResolveFieldInterface(field, input: false, output: true, diagnostics);
+							if (inputName == null || outputName == null) continue;
 						}
-						if (isInput && !isOutput && inputName == null)
+						else if (isInput)
 						{
-							diagnostics.Add(Errors.IsNotInput(field));
-							continue;
+							inputName = ResolveFieldInterface(field, input: true, output: false, diagnostics);
+							if (inputName == null) continue;
 						}
-						if (isOutput && !isInput && outputName == null)
+						else
 						{
-							diagnostics.Add(Errors.IsNotOutput(field));
-							continue;
+							outputName = ResolveFieldInterface(field, input: false, output: true, diagnostics);
+							if (outputName == null) continue;
 						}
 						var resolvedMock = field.Type.ResolveMockTypeName();
 						var mockType = resolvedMock ?? field.Type.QualifiedName();
 						var initializer = resolvedMock != null ? $" = new {resolvedMock}();" : "";
 						sb.Append($"\n		public {mockType} {prop} {{ get; set; }}{initializer}");
-						if (isInput)
+						if (hasViewIfaces)
 						{
-							sb.Append($"\n		{inputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {prop};");
-						}
-						if (isOutput)
-						{
-							sb.Append($"\n		{outputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Output{generics}.{prop} => {prop};");
+							if (isInput)
+							{
+								sb.Append($"\n		{inputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {prop};");
+							}
+							if (isOutput)
+							{
+								sb.Append($"\n		{outputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Output{generics}.{prop} => {prop};");
+							}
 						}
 					}
 					else if (member is IPropertySymbol property)
@@ -434,7 +445,7 @@ namespace MockGenereator
 						{
 							sb.AppendFormat("\n		public {0} {1} {{ get; set; }}", rawType, prop);
 						}
-						if (property.HasInputGetter())
+						if (hasViewIfaces && property.HasInputGetter())
 						{
 							var inputName = property.Type.ResolveViewInterfaceName(input: true, output: false);
 							if (inputName != null && inputName != rawType)
@@ -442,7 +453,7 @@ namespace MockGenereator
 								sb.Append($"\n		{inputName} {Namespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {prop};");
 							}
 						}
-						if (property.HasOutputGetter())
+						if (hasViewIfaces && property.HasOutputGetter())
 						{
 							var outputName = property.Type.ResolveViewInterfaceName(input: false, output: true);
 							if (outputName != null && outputName != rawType)
@@ -472,6 +483,17 @@ namespace MockGenereator
 					}
 				}
 
+				// Iface-inherited members (multi-interface support).
+				var emittedSlots = new HashSet<string>();
+				foreach (var iface in inputCollected)
+				{
+					EmitInterfaceMembers(sb, typeSymbol, iface, inputMulti, emittedSlots);
+				}
+				foreach (var iface in outputCollected)
+				{
+					EmitInterfaceMembers(sb, typeSymbol, iface, outputMulti, emittedSlots);
+				}
+
 				sb.Append("""
 
 						}
@@ -480,6 +502,247 @@ namespace MockGenereator
 			});
 
 			return new GenerationResult(files.ToArray(), diagnostics.ToArray());
+		}
+
+		static string MockImplementsClause(INamedTypeSymbol view, bool hasViewIfaces, List<INamedTypeSymbol> inputIfaces, List<INamedTypeSymbol> outputIfaces)
+		{
+			if (hasViewIfaces)
+			{
+				return $" : I{view.Name}{view.TypeParameters.GenericsParams()}";
+			}
+			var all = new List<INamedTypeSymbol>();
+			var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+			foreach (var i in inputIfaces) { if (seen.Add(i)) all.Add(i); }
+			foreach (var i in outputIfaces) { if (seen.Add(i)) all.Add(i); }
+			if (all.Count == 0) return "";
+			using var _ = StringBuilderHolder.Get(out var sb);
+			sb.Append(" : ");
+			for (var i = 0; i < all.Count; ++i)
+			{
+				if (i != 0) sb.Append(", ");
+				sb.Append(all[i].QualifiedName());
+			}
+			return sb.ToString();
+		}
+
+		static void EmitInterfaceMembers(StringBuilder sb, INamedTypeSymbol view, INamedTypeSymbol iface, bool multiSource, HashSet<string> emittedSlots)
+		{
+			var ifaceQ = iface.QualifiedName();
+			foreach (var member in iface.GetMembers())
+			{
+				if (member is IEventSymbol ev)
+				{
+					var (slotName, isExplicit) = DecideSlot(view, iface, ev, multiSource);
+					if (!emittedSlots.Add("E:" + slotName)) continue;
+					EmitEventSlot(sb, ev, slotName, (isExplicit || multiSource) ? ifaceQ : null);
+				}
+				else if (member is IPropertySymbol prop)
+				{
+					var (slotName, isExplicit) = DecideSlot(view, iface, prop, multiSource);
+					if (!emittedSlots.Add("P:" + slotName)) continue;
+					EmitPropertySlot(sb, prop, slotName, (isExplicit || multiSource) ? ifaceQ : null);
+				}
+				else if (member is IMethodSymbol m && m.MethodKind == MethodKind.Ordinary)
+				{
+					var (slotName, isExplicit) = DecideSlot(view, iface, m, multiSource);
+					if (!emittedSlots.Add("M:" + slotName + m.MethodParams())) continue;
+					EmitMethodSlot(sb, m, slotName, (isExplicit || multiSource) ? ifaceQ : null);
+				}
+			}
+		}
+
+		static (string slotName, bool isExplicit) DecideSlot(INamedTypeSymbol view, INamedTypeSymbol iface, ISymbol member, bool multiSource)
+		{
+			var impl = view.FindImplementationForInterfaceMember(member);
+			bool isExplicit = false;
+			if (impl is IEventSymbol ie) isExplicit = !ie.ExplicitInterfaceImplementations.IsDefaultOrEmpty;
+			else if (impl is IPropertySymbol ip) isExplicit = !ip.ExplicitInterfaceImplementations.IsDefaultOrEmpty;
+			else if (impl is IMethodSymbol im) isExplicit = !im.ExplicitInterfaceImplementations.IsDefaultOrEmpty;
+			bool usePrefix = multiSource || isExplicit;
+			string slotName = usePrefix ? $"{iface.Name}_{member.Name}" : member.Name;
+			return (slotName, isExplicit);
+		}
+
+		static void EmitEventSlot(StringBuilder sb, IEventSymbol e, string slotName, string explicitTarget)
+		{
+			var eventType = e.Type.QualifiedName();
+			var invoke = (e.Type as INamedTypeSymbol)?.DelegateInvokeMethod;
+			sb.Append($"\n		public event {eventType} {slotName};");
+			if (invoke != null)
+			{
+				var ret = invoke.ReturnTypeName();
+				var returnsVoid = invoke.ReturnsVoid;
+				var paramsText = invoke.MethodParams();
+				var argsText = invoke.MethodArgs();
+				var hasOut = invoke.Parameters.Any(p => p.RefKind == RefKind.Out);
+				string body;
+				if (hasOut)
+				{
+					var outInit = string.Concat(invoke.Parameters
+						.Where(p => p.RefKind == RefKind.Out)
+						.Select(p => $"\n\t\t\t{p.Name} = default;"));
+					body = returnsVoid
+						? $"\n		{{\n\t\t\tif ({slotName} != null) {{ {slotName}.Invoke{argsText}; return; }}{outInit}\n\t\t}}"
+						: $"\n		{{\n\t\t\tif ({slotName} != null) return {slotName}.Invoke{argsText};{outInit}\n\t\t\treturn default({ret});\n\t\t}}";
+				}
+				else
+				{
+					body = returnsVoid
+						? $" => {slotName}?.Invoke{argsText};"
+						: $" => {slotName} != null ? {slotName}.Invoke{argsText} : default({ret});";
+				}
+				sb.Append($"\n		public {ret} Raise{slotName}{paramsText}{body}");
+			}
+			if (explicitTarget != null)
+			{
+				sb.Append($"\n		event {eventType} {explicitTarget}.{e.Name} {{ add => {slotName} += value; remove => {slotName} -= value; }}");
+			}
+		}
+
+		static void EmitPropertySlot(StringBuilder sb, IPropertySymbol p, string slotName, string explicitTarget)
+		{
+			var t = p.Type.QualifiedName();
+			var hasGet = p.GetMethod != null;
+			var hasSet = p.SetMethod != null;
+			if (hasSet)
+			{
+				// Mirror On{Name}Set Action pattern for output-setter
+				var pascal = char.ToUpper(slotName[0]) + slotName.Substring(1);
+				var camel = char.ToLower(slotName[0]) + slotName.Substring(1);
+				var backing = "_" + camel + "Backing";
+				var onSet = "On" + pascal + "Set";
+				sb.Append($"\n		public System.Action<{t}> {onSet} {{ get; set; }}");
+				sb.Append($"\n		private {t} {backing};");
+				if (hasGet)
+				{
+					sb.Append($"\n		public {t} {slotName} {{ get => {backing}; set {{ {backing} = value; {onSet}?.Invoke(value); }} }}");
+				}
+				else
+				{
+					sb.Append($"\n		public {t} {slotName} {{ set {{ {backing} = value; {onSet}?.Invoke(value); }} }}");
+				}
+			}
+			else
+			{
+				sb.Append($"\n		public {t} {slotName} {{ get; set; }}");
+			}
+			if (explicitTarget != null)
+			{
+				if (hasGet && hasSet)
+					sb.Append($"\n		{t} {explicitTarget}.{p.Name} {{ get => {slotName}; set => {slotName} = value; }}");
+				else if (hasGet)
+					sb.Append($"\n		{t} {explicitTarget}.{p.Name} => {slotName};");
+				else
+					sb.Append($"\n		{t} {explicitTarget}.{p.Name} {{ set => {slotName} = value; }}");
+			}
+		}
+
+		static void EmitMethodSlot(StringBuilder sb, IMethodSymbol m, string slotName, string explicitTarget)
+		{
+			var ret = m.ReturnTypeName();
+			var returnsVoid = m.ReturnsVoid;
+			var isGeneric = m.IsGenericMethod;
+			var generics = m.TypeParameters.GenericsParams();
+			var constraints = m.TypeParameters.GenericsConstraints();
+			var paramsText = m.MethodParams();
+			var paramsTextWD = m.MethodParams(withDefaults: true);
+			var argsText = m.MethodArgs();
+			var hasOut = m.Parameters.Any(p => p.RefKind == RefKind.Out);
+			var funcName = slotName + "Func";
+			var delegateName = slotName + "Delegate";
+			var invoke = isGeneric ? "Call" + generics : "Invoke";
+			if (isGeneric)
+			{
+				delegateName = "I" + delegateName;
+			}
+			var typeDecl = isGeneric
+				? $"\n		public interface {delegateName}\n		{{\n			{ret} Call{generics}{paramsText}{constraints};\n		}}"
+				: $"\n		public delegate {ret} {delegateName}{paramsText};";
+			string body;
+			if (hasOut)
+			{
+				var outInit = string.Concat(m.Parameters
+					.Where(p => p.RefKind == RefKind.Out)
+					.Select(p => $"\n\t\t\t{p.Name} = default;"));
+				body = returnsVoid
+					? $"\n		{{\n\t\t\tif ({funcName} != null) {{ {funcName}.{invoke}{argsText}; return; }}{outInit}\n\t\t}}"
+					: $"\n		{{\n\t\t\tif ({funcName} != null) return {funcName}.{invoke}{argsText};{outInit}\n\t\t\treturn default({ret});\n\t\t}}";
+			}
+			else
+			{
+				body = returnsVoid
+					? $" => {funcName}?.{invoke}{argsText};"
+					: $" => {funcName} != null ? {funcName}.{invoke}{argsText} : default({ret});";
+			}
+			sb.Append(typeDecl);
+			sb.Append($"\n		public {delegateName} {funcName} {{ get; set; }}");
+			sb.Append($"\n		public {ret} {slotName}{generics}{paramsTextWD}{constraints}{body}");
+			if (explicitTarget != null)
+			{
+				sb.Append($"\n		{ret} {explicitTarget}.{m.Name}{generics}{paramsText}{constraints} => {slotName}{generics}{argsText};");
+			}
+		}
+
+		static string ResolveFieldInterface(IFieldSymbol field, bool input, bool output, List<DiagnosticInfo> diagnostics)
+		{
+			var r = field.Type.ResolveViewInterface(input, output, field);
+			switch (r.Status)
+			{
+				case Utilities.ResolveStatus.Found:
+					return r.Name;
+				case Utilities.ResolveStatus.Ambiguous:
+					if (input && output) diagnostics.Add(Errors.IsNotInputAndOutput(field));
+					else if (input) diagnostics.Add(Errors.AmbiguousInputInterface(field, r.MatchCount));
+					else diagnostics.Add(Errors.AmbiguousOutputInterface(field, r.MatchCount));
+					return null;
+				case Utilities.ResolveStatus.AsNotImplemented:
+					diagnostics.Add(Errors.AsTargetNotImplemented(field, r.AsTarget));
+					return null;
+				case Utilities.ResolveStatus.AsMissingAttribute:
+					diagnostics.Add(Errors.AsTargetMissingAttribute(field, r.AsTarget, r.RequiredAttribute));
+					return null;
+				default:
+					if (input && output) diagnostics.Add(Errors.IsNotInputAndOutput(field));
+					else if (input) diagnostics.Add(Errors.IsNotInput(field));
+					else diagnostics.Add(Errors.IsNotOutput(field));
+					return null;
+			}
+		}
+
+		static string InheritanceClause(List<INamedTypeSymbol> ifaces)
+		{
+			if (ifaces.Count == 0) return "";
+			using var _ = StringBuilderHolder.Get(out var sb);
+			sb.Append(" : ");
+			for (var i = 0; i < ifaces.Count; ++i)
+			{
+				if (i != 0) sb.Append(", ");
+				sb.Append(ifaces[i].QualifiedName());
+			}
+			return sb.ToString();
+		}
+
+		static void ValidateAsPlacement(INamedTypeSymbol view, List<DiagnosticInfo> diagnostics)
+		{
+			foreach (var member in view.GetMembers())
+			{
+				if (member is IFieldSymbol) continue;
+				if (member is IPropertySymbol prop)
+				{
+					if (prop.GetMethod != null && Utilities.HasAsArgument(prop.GetMethod))
+						diagnostics.Add(Errors.AsOnNonField(prop.GetMethod));
+					if (prop.SetMethod != null && Utilities.HasAsArgument(prop.SetMethod))
+						diagnostics.Add(Errors.AsOnNonField(prop.SetMethod));
+					continue;
+				}
+				if (Utilities.HasAsArgument(member))
+					diagnostics.Add(Errors.AsOnNonField(member));
+			}
+			foreach (var iface in view.AllInterfaces)
+			{
+				if (Utilities.HasAsArgument(iface))
+					diagnostics.Add(Errors.AsOnNonField(iface));
+			}
 		}
 
 		static string Namespace(ISymbol symbol)

@@ -35,14 +35,60 @@ namespace MockGenereator
 			return null;
 		}
 
-		public static string ResolveViewInterfaceName(this ITypeSymbol fieldType, bool input, bool output)
+		public enum ResolveStatus { Found, NotFound, Ambiguous, AsNotImplemented, AsMissingAttribute }
+
+		public struct ResolveResult
 		{
-			var existing = fieldType.AllInterfaces.FirstOrDefault(x =>
-				(!input || x.HasAttribute("MockGenerator", "InputAttribute")) &&
-				(!output || x.HasAttribute("MockGenerator", "OutputAttribute")));
-			if (existing != null)
+			public ResolveStatus Status;
+			public string Name;
+			public int MatchCount;
+			public ITypeSymbol AsTarget;
+			public string RequiredAttribute;
+		}
+
+		public static string ResolveViewInterfaceName(this ITypeSymbol fieldType, bool input, bool output)
+			=> ResolveViewInterface(fieldType, input, output, null).Name;
+
+		public static ResolveResult ResolveViewInterface(this ITypeSymbol fieldType, bool input, bool output, ISymbol attributeHolder)
+		{
+			// 1. If As is specified on a field attribute, validate and use it.
+			if (attributeHolder is IFieldSymbol)
 			{
-				return existing.QualifiedName();
+				var asType = GetAsTarget(attributeHolder, input, output);
+				if (asType != null)
+				{
+					var implemented = fieldType.AllInterfaces.Any(x =>
+						SymbolEqualityComparer.Default.Equals(x, asType))
+						|| SymbolEqualityComparer.Default.Equals(fieldType, asType);
+					if (!implemented)
+					{
+						return new ResolveResult { Status = ResolveStatus.AsNotImplemented, AsTarget = asType };
+					}
+					bool hasInput = asType.HasAttribute("MockGenerator", "InputAttribute");
+					bool hasOutput = asType.HasAttribute("MockGenerator", "OutputAttribute");
+					if (input && !hasInput)
+					{
+						return new ResolveResult { Status = ResolveStatus.AsMissingAttribute, AsTarget = asType, RequiredAttribute = "InputAttribute" };
+					}
+					if (output && !hasOutput)
+					{
+						return new ResolveResult { Status = ResolveStatus.AsMissingAttribute, AsTarget = asType, RequiredAttribute = "OutputAttribute" };
+					}
+					return new ResolveResult { Status = ResolveStatus.Found, Name = asType.QualifiedName() };
+				}
+			}
+
+			var matches = fieldType.AllInterfaces.Where(x =>
+				(!input || x.HasAttribute("MockGenerator", "InputAttribute")) &&
+				(!output || x.HasAttribute("MockGenerator", "OutputAttribute"))).ToList();
+
+			if (matches.Count > 1)
+			{
+				return new ResolveResult { Status = ResolveStatus.Ambiguous, MatchCount = matches.Count };
+			}
+			if (matches.Count == 1)
+			{
+				return new ResolveResult { Status = ResolveStatus.Found, Name = matches[0].QualifiedName() };
 			}
 
 			if (fieldType is INamedTypeSymbol named &&
@@ -50,11 +96,116 @@ namespace MockGenereator
 			{
 				var ns = named.ContainingNamespace.IsGlobalNamespace ? "" : named.ContainingNamespace + ".";
 				var suffix = (input && output) ? "" : (input ? "Input" : "Output");
-				return $"MockView.{ns}I{named.Name}{suffix}{named.TypeArguments.GenericArgs()}";
+				return new ResolveResult { Status = ResolveStatus.Found, Name = $"MockView.{ns}I{named.Name}{suffix}{named.TypeArguments.GenericArgs()}" };
 			}
 
+			return new ResolveResult { Status = ResolveStatus.NotFound };
+		}
+
+		static INamedTypeSymbol GetAsTarget(ISymbol symbol, bool input, bool output)
+		{
+			foreach (var attr in symbol.GetAttributes())
+			{
+				var ac = attr.AttributeClass;
+				if (ac == null) continue;
+				if (ac.ContainingNamespace?.ToString() != "MockGenerator") continue;
+				if (input && ac.MetadataName == "InputAttribute")
+				{
+					var v = FindNamedArg(attr, "As");
+					if (v != null) return v;
+				}
+				if (output && ac.MetadataName == "OutputAttribute")
+				{
+					var v = FindNamedArg(attr, "As");
+					if (v != null) return v;
+				}
+			}
 			return null;
 		}
+
+		static INamedTypeSymbol FindNamedArg(AttributeData attr, string name)
+		{
+			foreach (var kv in attr.NamedArguments)
+			{
+				if (kv.Key == name && !kv.Value.IsNull && kv.Value.Value is INamedTypeSymbol t)
+				{
+					return t;
+				}
+			}
+			return null;
+		}
+
+		public static bool HasAsArgument(ISymbol symbol)
+		{
+			foreach (var attr in symbol.GetAttributes())
+			{
+				var ac = attr.AttributeClass;
+				if (ac == null) continue;
+				if (ac.ContainingNamespace?.ToString() != "MockGenerator") continue;
+				if (ac.MetadataName != "InputAttribute" && ac.MetadataName != "OutputAttribute") continue;
+				if (FindNamedArg(attr, "As") != null) return true;
+			}
+			return false;
+		}
+
+		/// <summary>
+		/// Collect [Input] / [Output] interfaces that contribute members to the Mock.
+		/// Returns the directly-implemented attributed interfaces of <paramref name="view"/>, plus all of
+		/// their (possibly untagged) base interfaces. For each interface in the result, members declared
+		/// on that interface (not on its bases) contribute to the Mock; declaring interface is used for
+		/// prefix naming when there are multiple sources.
+		/// </summary>
+		public static List<INamedTypeSymbol> CollectAttributedInterfaces(INamedTypeSymbol view, bool input, bool output)
+		{
+			var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+			var result = new List<INamedTypeSymbol>();
+
+			foreach (var iface in view.Interfaces)
+			{
+				if (!IsAttributed(iface, input, output)) continue;
+				AddRecursive(iface, seen, result);
+			}
+			return result;
+		}
+
+		/// <summary>
+		/// Directly-implemented attributed interfaces only (used for Mock's implements list and umbrella inheritance).
+		/// </summary>
+		public static List<INamedTypeSymbol> DirectAttributedInterfaces(INamedTypeSymbol view, bool input, bool output)
+		{
+			var result = new List<INamedTypeSymbol>();
+			foreach (var iface in view.Interfaces)
+			{
+				if (IsAttributed(iface, input, output))
+				{
+					result.Add(iface);
+				}
+			}
+			return result;
+		}
+
+		static bool IsAttributed(INamedTypeSymbol iface, bool input, bool output)
+		{
+			if (input && !iface.HasAttribute("MockGenerator", "InputAttribute")) return false;
+			if (output && !iface.HasAttribute("MockGenerator", "OutputAttribute")) return false;
+			return input || output;
+		}
+
+		static void AddRecursive(INamedTypeSymbol iface, HashSet<INamedTypeSymbol> seen, List<INamedTypeSymbol> result)
+		{
+			if (!seen.Add(iface)) return;
+			result.Add(iface);
+			foreach (var b in iface.Interfaces)
+			{
+				AddRecursive(b, seen, result);
+			}
+		}
+
+		/// <summary>
+		/// Simple name of an interface, used as prefix in slot names (e.g., "IFoo_OnA").
+		/// Generic type arguments are intentionally omitted (see memory project_multi_interface_mock_design §"命名 mangling の限界").
+		/// </summary>
+		public static string PrefixName(this INamedTypeSymbol iface) => iface.Name;
 
 		public static bool HasAttribute<T>(this T self, string @namespace, string name) where T : ISymbol
 		{

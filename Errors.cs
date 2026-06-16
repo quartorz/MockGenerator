@@ -60,5 +60,60 @@ namespace MockGenereator
 				location: LocationInfo.From(setter),
 				messageArgs: Array.Empty<string>());
 		}
+
+		public static DiagnosticInfo AmbiguousInputInterface(IFieldSymbol field, int matchCount)
+		{
+			return new DiagnosticInfo(
+				id: "MockGen006",
+				title: "Source Generator Error",
+				messageFormat: "Field \"{0}\" (type: \"{1}\") implements {2} interfaces with \"InputAttribute\". Specify which one to use with [Input(As = typeof(IXxx))].",
+				severity: DiagnosticSeverity.Error,
+				location: LocationInfo.From(field),
+				messageArgs: new[] { field.Name, field.Type.ToString(), matchCount.ToString() });
+		}
+
+		public static DiagnosticInfo AmbiguousOutputInterface(IFieldSymbol field, int matchCount)
+		{
+			return new DiagnosticInfo(
+				id: "MockGen007",
+				title: "Source Generator Error",
+				messageFormat: "Field \"{0}\" (type: \"{1}\") implements {2} interfaces with \"OutputAttribute\". Specify which one to use with [Output(As = typeof(IXxx))].",
+				severity: DiagnosticSeverity.Error,
+				location: LocationInfo.From(field),
+				messageArgs: new[] { field.Name, field.Type.ToString(), matchCount.ToString() });
+		}
+
+		public static DiagnosticInfo AsTargetNotImplemented(IFieldSymbol field, ITypeSymbol asTarget)
+		{
+			return new DiagnosticInfo(
+				id: "MockGen008",
+				title: "Source Generator Error",
+				messageFormat: "Field \"{0}\" (type: \"{1}\") does not implement \"{2}\" specified via \"As\".",
+				severity: DiagnosticSeverity.Error,
+				location: LocationInfo.From(field),
+				messageArgs: new[] { field.Name, field.Type.ToString(), asTarget.ToString() });
+		}
+
+		public static DiagnosticInfo AsTargetMissingAttribute(IFieldSymbol field, ITypeSymbol asTarget, string requiredAttribute)
+		{
+			return new DiagnosticInfo(
+				id: "MockGen009",
+				title: "Source Generator Error",
+				messageFormat: "Field \"{0}\": \"As\" target \"{1}\" does not have \"{2}\".",
+				severity: DiagnosticSeverity.Error,
+				location: LocationInfo.From(field),
+				messageArgs: new[] { field.Name, asTarget.ToString(), requiredAttribute });
+		}
+
+		public static DiagnosticInfo AsOnNonField(ISymbol symbol)
+		{
+			return new DiagnosticInfo(
+				id: "MockGen010",
+				title: "Source Generator Error",
+				messageFormat: "\"As\" parameter is only valid on fields. (symbol: \"{0}\")",
+				severity: DiagnosticSeverity.Error,
+				location: LocationInfo.From(symbol),
+				messageArgs: new[] { symbol.ToString() });
+		}
 	}
 }
