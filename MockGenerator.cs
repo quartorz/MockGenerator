@@ -532,26 +532,26 @@ namespace MockGenereator
 			{
 				if (member is IEventSymbol ev)
 				{
-					var (slotName, isExplicit) = DecideSlot(view, iface, ev, multiSource);
+					var (slotName, isExplicit, _) = DecideSlot(view, iface, ev, multiSource);
 					if (!emittedSlots.Add("E:" + slotName)) continue;
 					EmitEventSlot(sb, ev, slotName, (isExplicit || multiSource) ? ifaceQ : null);
 				}
 				else if (member is IPropertySymbol prop)
 				{
-					var (slotName, isExplicit) = DecideSlot(view, iface, prop, multiSource);
+					var (slotName, isExplicit, prefix) = DecideSlot(view, iface, prop, multiSource);
 					if (!emittedSlots.Add("P:" + slotName)) continue;
-					EmitPropertySlot(sb, prop, slotName, (isExplicit || multiSource) ? ifaceQ : null);
+					EmitPropertySlot(sb, prop, slotName, prefix, (isExplicit || multiSource) ? ifaceQ : null);
 				}
 				else if (member is IMethodSymbol m && m.MethodKind == MethodKind.Ordinary)
 				{
-					var (slotName, isExplicit) = DecideSlot(view, iface, m, multiSource);
+					var (slotName, isExplicit, _) = DecideSlot(view, iface, m, multiSource);
 					if (!emittedSlots.Add("M:" + slotName + m.MethodParams())) continue;
 					EmitMethodSlot(sb, m, slotName, (isExplicit || multiSource) ? ifaceQ : null);
 				}
 			}
 		}
 
-		static (string slotName, bool isExplicit) DecideSlot(INamedTypeSymbol view, INamedTypeSymbol iface, ISymbol member, bool multiSource)
+		static (string slotName, bool isExplicit, string prefix) DecideSlot(INamedTypeSymbol view, INamedTypeSymbol iface, ISymbol member, bool multiSource)
 		{
 			var impl = view.FindImplementationForInterfaceMember(member);
 			bool isExplicit = false;
@@ -559,8 +559,8 @@ namespace MockGenereator
 			else if (impl is IPropertySymbol ip) isExplicit = !ip.ExplicitInterfaceImplementations.IsDefaultOrEmpty;
 			else if (impl is IMethodSymbol im) isExplicit = !im.ExplicitInterfaceImplementations.IsDefaultOrEmpty;
 			bool usePrefix = multiSource || isExplicit;
-			string slotName = usePrefix ? $"{iface.Name}_{member.Name}" : member.Name;
-			return (slotName, isExplicit);
+			string prefix = usePrefix ? $"{iface.Name}_" : "";
+			return (prefix + member.Name, isExplicit, prefix);
 		}
 
 		static void EmitEventSlot(StringBuilder sb, IEventSymbol e, string slotName, string explicitTarget)
@@ -599,7 +599,7 @@ namespace MockGenereator
 			}
 		}
 
-		static void EmitPropertySlot(StringBuilder sb, IPropertySymbol p, string slotName, string explicitTarget)
+		static void EmitPropertySlot(StringBuilder sb, IPropertySymbol p, string slotName, string prefix, string explicitTarget)
 		{
 			var t = p.Type.QualifiedName();
 			var hasGet = p.GetMethod != null;
@@ -607,10 +607,11 @@ namespace MockGenereator
 			if (hasSet)
 			{
 				// Mirror On{Name}Set Action pattern for output-setter
-				var pascal = char.ToUpper(slotName[0]) + slotName.Substring(1);
 				var camel = char.ToLower(slotName[0]) + slotName.Substring(1);
 				var backing = "_" + camel + "Backing";
-				var onSet = "On" + pascal + "Set";
+				// Place "On" before the property name, after any interface prefix:
+				// prefix "IOut_" + "text" -> "IOut_OnTextSet" (not "OnIOut_textSet").
+				var onSet = prefix + "On" + char.ToUpper(p.Name[0]) + p.Name.Substring(1) + "Set";
 				sb.Append($"\n		public System.Action<{t}> {onSet} {{ get; set; }}");
 				sb.Append($"\n		private {t} {backing};");
 				if (hasGet)
