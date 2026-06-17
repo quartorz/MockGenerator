@@ -487,17 +487,41 @@ namespace MockGenereator
 				ownMethods.EmitAll(sb, "\t\t");
 
 				// Iface-inherited members (multi-interface support).
+				// Non-generic interfaces use the flat (optionally prefixed) slot scheme. Generic interfaces
+				// use the As{Iface}<...>() accessor scheme so that distinct closed type arguments (including
+				// nested generics, any arity) never collide. See memory project_multi_interface_mock_design.
 				var emittedSlots = new HashSet<string>();
 				var ifaceMethods = new Utilities.MethodGroups();
-				foreach (var iface in inputCollected)
+				var genericDefs = new List<INamedTypeSymbol>();
+				var genericClosed = new Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>>(SymbolEqualityComparer.Default);
+				void Route(INamedTypeSymbol iface, bool multi)
 				{
-					EmitInterfaceMembers(sb, typeSymbol, iface, inputMulti, emittedSlots, ifaceMethods);
+					if (iface.OriginalDefinition.TypeParameters.Length > 0)
+					{
+						var def = iface.OriginalDefinition;
+						if (!genericClosed.TryGetValue(def, out var list))
+						{
+							list = new List<INamedTypeSymbol>();
+							genericClosed[def] = list;
+							genericDefs.Add(def);
+						}
+						if (!list.Any(x => SymbolEqualityComparer.Default.Equals(x, iface)))
+						{
+							list.Add(iface);
+						}
+					}
+					else
+					{
+						EmitInterfaceMembers(sb, typeSymbol, iface, multi, emittedSlots, ifaceMethods);
+					}
 				}
-				foreach (var iface in outputCollected)
-				{
-					EmitInterfaceMembers(sb, typeSymbol, iface, outputMulti, emittedSlots, ifaceMethods);
-				}
+				foreach (var iface in inputCollected) Route(iface, inputMulti);
+				foreach (var iface in outputCollected) Route(iface, outputMulti);
 				ifaceMethods.EmitAll(sb, "\t\t");
+				foreach (var def in genericDefs)
+				{
+					EmitGenericInterfaceAccessor(sb, typeSymbol, def, genericClosed[def], emittedSlots);
+				}
 
 				sb.Append("""
 
@@ -639,6 +663,181 @@ namespace MockGenereator
 					sb.Append($"\n		{t} {explicitTarget}.{p.Name} => {slotName};");
 				else
 					sb.Append($"\n		{t} {explicitTarget}.{p.Name} {{ set => {slotName} = value; }}");
+			}
+		}
+
+		/// <summary>
+		/// Emits the accessor scheme for one generic interface definition (e.g. <c>IFoo&lt;T&gt;</c>):
+		/// a nested <c>{Iface}Accessor&lt;...&gt;</c> holding the mock storage, an <c>As{Iface}&lt;...&gt;()</c>
+		/// entry that resolves the accessor for a closed type argument set via <c>typeof</c>, and one routing
+		/// member per implemented closed instantiation (public mirror when the View implements implicitly,
+		/// explicit interface implementation when explicitly). Type arguments — any arity, any nesting — ride
+		/// on the method type parameters, so no identifier mangling is needed.
+		/// </summary>
+		static void EmitGenericInterfaceAccessor(StringBuilder sb, INamedTypeSymbol view, INamedTypeSymbol def, List<INamedTypeSymbol> closedList, HashSet<string> emittedSlots)
+		{
+			var accName = def.Name + "Accessor";
+			var asName = "As" + def.Name;
+			var tparams = def.TypeParameters.GenericsParams();
+			var tconstraints = def.TypeParameters.GenericsConstraints();
+			var mapField = "_" + char.ToLower(def.Name[0]) + def.Name.Substring(1) + "AccessorMap";
+
+			// Accessor type + As<...>() entry: once per generic interface definition.
+			if (emittedSlots.Add("ACC:" + def.QualifiedName()))
+			{
+				sb.Append($"\n		public sealed class {accName}{tparams}{tconstraints}");
+				sb.Append("\n		{");
+				var accMethods = new Utilities.MethodGroups();
+				foreach (var member in def.GetMembers())
+				{
+					if (member is IPropertySymbol prop)
+					{
+						EmitAccessorProperty(sb, prop);
+					}
+					else if (member is IEventSymbol ev)
+					{
+						sb.EmitMockEventMember("\t\t\t", ev);
+					}
+					else if (member is IMethodSymbol m && m.MethodKind == MethodKind.Ordinary)
+					{
+						accMethods.Add(m.Name, m);
+					}
+				}
+				accMethods.EmitAll(sb, "\t\t\t");
+				sb.Append("\n		}");
+
+				sb.Append($"\n		private readonly System.Collections.Generic.Dictionary<System.Type, object> {mapField} = new System.Collections.Generic.Dictionary<System.Type, object>();");
+				sb.Append($"\n		public {accName}{tparams} {asName}{tparams}(){tconstraints}");
+				sb.Append("\n		{");
+				sb.Append($"\n			if (!{mapField}.TryGetValue(typeof({accName}{tparams}), out var __a))");
+				sb.Append("\n			{");
+				sb.Append($"\n				__a = new {accName}{tparams}();");
+				sb.Append($"\n				{mapField}[typeof({accName}{tparams})] = __a;");
+				sb.Append("\n			}");
+				sb.Append($"\n			return ({accName}{tparams})__a;");
+				sb.Append("\n		}");
+			}
+
+			// Routing: one member per implemented closed instantiation, into its accessor.
+			foreach (var closed in closedList)
+			{
+				var asCall = $"{asName}{closed.TypeArguments.GenericArgs()}()";
+				foreach (var member in closed.GetMembers())
+				{
+					EmitAccessorRouting(sb, view, closed, member, asCall, emittedSlots);
+				}
+			}
+		}
+
+		/// <summary>
+		/// Emits one member inside a generic interface accessor. Mirrors <see cref="EmitPropertySlot"/>'s
+		/// convention: a setter becomes the <c>On{Name}Set</c> Action + backing pattern, a getter-only
+		/// property becomes auto get/set storage. The member name is used verbatim (no prefix), because the
+		/// accessor type itself is the disambiguator.
+		/// </summary>
+		static void EmitAccessorProperty(StringBuilder sb, IPropertySymbol p)
+		{
+			var t = p.Type.QualifiedName();
+			var hasGet = p.GetMethod != null;
+			var hasSet = p.SetMethod != null;
+			if (hasSet)
+			{
+				var pascal = char.ToUpper(p.Name[0]) + p.Name.Substring(1);
+				var camel = char.ToLower(p.Name[0]) + p.Name.Substring(1);
+				var backing = "_" + camel + "Backing";
+				var onSet = "On" + pascal + "Set";
+				sb.Append($"\n			public System.Action<{t}> {onSet} {{ get; set; }}");
+				sb.Append($"\n			private {t} {backing};");
+				if (hasGet)
+				{
+					sb.Append($"\n			public {t} {p.Name} {{ get => {backing}; set {{ {backing} = value; {onSet}?.Invoke(value); }} }}");
+				}
+				else
+				{
+					sb.Append($"\n			public {t} {p.Name} {{ set {{ {backing} = value; {onSet}?.Invoke(value); }} }}");
+				}
+			}
+			else
+			{
+				sb.Append($"\n			public {t} {p.Name} {{ get; set; }}");
+			}
+		}
+
+		/// <summary>
+		/// Emits the Mock-side member that satisfies one closed-interface member by forwarding to its accessor.
+		/// A public mirror when the View implements the member implicitly; an explicit interface implementation
+		/// when explicitly. Duplicate public signatures (the same View member shared by several interface members)
+		/// are emitted once.
+		/// </summary>
+		static void EmitAccessorRouting(StringBuilder sb, INamedTypeSymbol view, INamedTypeSymbol closed, ISymbol member, string asCall, HashSet<string> emittedSlots)
+		{
+			var impl = view.FindImplementationForInterfaceMember(member);
+			bool isExplicit = false;
+			if (impl is IPropertySymbol ip) isExplicit = !ip.ExplicitInterfaceImplementations.IsDefaultOrEmpty;
+			else if (impl is IEventSymbol ie) isExplicit = !ie.ExplicitInterfaceImplementations.IsDefaultOrEmpty;
+			else if (impl is IMethodSymbol im) isExplicit = !im.ExplicitInterfaceImplementations.IsDefaultOrEmpty;
+			var target = closed.QualifiedName();
+
+			if (member is IPropertySymbol p)
+			{
+				var t = p.Type.QualifiedName();
+				var hasGet = p.GetMethod != null;
+				var hasSet = p.SetMethod != null;
+				if (!isExplicit)
+				{
+					if (!emittedSlots.Add("GP:" + p.Name)) return;
+					if (hasGet && hasSet)
+						sb.Append($"\n		public {t} {p.Name} {{ get => {asCall}.{p.Name}; set => {asCall}.{p.Name} = value; }}");
+					else if (hasGet)
+						sb.Append($"\n		public {t} {p.Name} {{ get => {asCall}.{p.Name}; }}");
+					else
+						sb.Append($"\n		public {t} {p.Name} {{ set => {asCall}.{p.Name} = value; }}");
+				}
+				else
+				{
+					if (!emittedSlots.Add("GPX:" + target + "." + p.Name)) return;
+					if (hasGet && hasSet)
+						sb.Append($"\n		{t} {target}.{p.Name} {{ get => {asCall}.{p.Name}; set => {asCall}.{p.Name} = value; }}");
+					else if (hasGet)
+						sb.Append($"\n		{t} {target}.{p.Name} => {asCall}.{p.Name};");
+					else
+						sb.Append($"\n		{t} {target}.{p.Name} {{ set => {asCall}.{p.Name} = value; }}");
+				}
+			}
+			else if (member is IEventSymbol e)
+			{
+				var et = e.Type.QualifiedName();
+				if (!isExplicit)
+				{
+					if (!emittedSlots.Add("GE:" + e.Name)) return;
+					sb.Append($"\n		public event {et} {e.Name} {{ add => {asCall}.{e.Name} += value; remove => {asCall}.{e.Name} -= value; }}");
+				}
+				else
+				{
+					if (!emittedSlots.Add("GEX:" + target + "." + e.Name)) return;
+					sb.Append($"\n		event {et} {target}.{e.Name} {{ add => {asCall}.{e.Name} += value; remove => {asCall}.{e.Name} -= value; }}");
+				}
+			}
+			else if (member is IMethodSymbol m && m.MethodKind == MethodKind.Ordinary)
+			{
+				var ret = m.ReturnTypeName();
+				var g = m.TypeParameters.GenericsParams();
+				var c = m.TypeParameters.GenericsConstraints();
+				var prmsNoDef = m.MethodParams();
+				var args = m.MethodArgs();
+				var call = $"{asCall}.{m.Name}{g}{args}";
+				if (!isExplicit)
+				{
+					if (!emittedSlots.Add("GM:" + m.Name + g + prmsNoDef)) return;
+					var prms = m.MethodParams(withDefaults: true);
+					sb.Append($"\n		public {ret} {m.Name}{g}{prms}{c} => {call};");
+				}
+				else
+				{
+					// Explicit interface implementations must NOT restate generic constraints (CS0460).
+					if (!emittedSlots.Add("GMX:" + target + "." + m.Name + g + prmsNoDef)) return;
+					sb.Append($"\n		{ret} {target}.{m.Name}{g}{prmsNoDef} => {call};");
+				}
 			}
 		}
 
