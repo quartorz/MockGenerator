@@ -497,6 +497,22 @@ namespace MockGenereator
 		}
 
 		/// <summary>
+		/// Emits a mock property member: a backing field, an OnXxxSet callback hook, and a property
+		/// whose setter invokes the callback.
+		/// </summary>
+		public static void EmitMockPropertyMember(this StringBuilder sb, string i, IPropertySymbol p)
+		{
+			var rawType = p.Type.QualifiedName();
+			var pascal = char.ToUpper(p.Name[0]) + p.Name.Substring(1);
+			var camel = char.ToLower(p.Name[0]) + p.Name.Substring(1);
+			var backing = "_" + camel + "Backing";
+			var onSet = "On" + pascal + "Set";
+			sb.Append($"\n{i}public System.Action<{rawType}> {onSet} {{ get; set; }}");
+			sb.Append($"\n{i}private {rawType} {backing};");
+			sb.Append($"\n{i}public {rawType} {p.Name} {{ get => {backing}; set {{ {backing} = value; {onSet}?.Invoke(value); }} }}");
+		}
+
+		/// <summary>
 		/// Emits a mock event member: the event itself plus a RaiseXxx helper that is null-safe
 		/// and handles ref/out/in parameters.
 		/// </summary>
@@ -578,6 +594,15 @@ namespace MockGenereator
 				{
 					_explicitTargets.TryGetValue(g.Key, out var target);
 					sb.EmitMockMethodGroup(i, g.Key, g.Value, target);
+				}
+			}
+
+			/// <summary>Invokes <paramref name="action"/> once per group, in insertion order.</summary>
+			public void ForEachGroup(System.Action<string, IReadOnlyList<IMethodSymbol>> action)
+			{
+				foreach (var g in _groups)
+				{
+					action(g.Key, g.Value);
 				}
 			}
 		}
