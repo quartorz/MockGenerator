@@ -103,11 +103,8 @@ namespace MockGenereator
 					""");
 			}
 
-			foreach (var member in typeSymbol.GetMembers())
+			foreach (var member in Utilities.CollectGenerateInterfaceMembers(typeSymbol))
 			{
-				if (member.DeclaredAccessibility != Accessibility.Public) continue;
-				if (member.IsStatic) continue;
-
 				switch (member)
 				{
 					case IPropertySymbol p when !p.IsIndexer:

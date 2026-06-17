@@ -20,7 +20,7 @@ namespace MockGenereator
 
 					namespace MockGenerator
 					{
-						[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+						[AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 						internal sealed class GenerateMockForAttribute : Attribute
 						{
 							public GenerateMockForAttribute(Type interfaceType) { InterfaceType = interfaceType; }

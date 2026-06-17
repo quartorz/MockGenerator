@@ -709,6 +709,10 @@ namespace MockGenereator
 				sb.Append($"\n		private readonly System.Collections.Generic.Dictionary<System.Type, object> {mapField} = new System.Collections.Generic.Dictionary<System.Type, object>();");
 				sb.Append($"\n		public {accName}{tparams} {asName}{tparams}(){tconstraints}");
 				sb.Append("\n		{");
+				// The implemented closed instantiations are known at generation time; reject any other.
+				var asValidCond = string.Join(" && ", closedList.Select(c => $"typeof({accName}{tparams}) != typeof({accName}{c.TypeArguments.GenericArgs()})"));
+				sb.Append($"\n			if ({asValidCond})");
+				sb.Append($"\n				throw new System.InvalidOperationException(\"This mock does not implement {def.Name} for type argument \" + typeof({accName}{tparams}) + \".\");");
 				sb.Append($"\n			if (!{mapField}.TryGetValue(typeof({accName}{tparams}), out var __a))");
 				sb.Append("\n			{");
 				sb.Append($"\n				__a = new {accName}{tparams}();");

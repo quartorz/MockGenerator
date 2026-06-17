@@ -160,7 +160,7 @@ namespace MockGenereator
 			var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
 			var result = new List<INamedTypeSymbol>();
 
-			foreach (var iface in view.Interfaces)
+			foreach (var iface in SelfAndBaseClassInterfaces(view))
 			{
 				if (!IsAttributed(iface, input, output)) continue;
 				AddRecursive(iface, seen, result);
@@ -173,12 +173,77 @@ namespace MockGenereator
 		/// </summary>
 		public static List<INamedTypeSymbol> DirectAttributedInterfaces(INamedTypeSymbol view, bool input, bool output)
 		{
+			var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
 			var result = new List<INamedTypeSymbol>();
-			foreach (var iface in view.Interfaces)
+			foreach (var iface in SelfAndBaseClassInterfaces(view))
 			{
-				if (IsAttributed(iface, input, output))
+				if (IsAttributed(iface, input, output) && seen.Add(iface))
 				{
 					result.Add(iface);
+				}
+			}
+			return result;
+		}
+
+		/// <summary>
+		/// Interfaces directly implemented by <paramref name="view"/> or any of its base classes, deduped
+		/// in most-derived-first order. <c>view.Interfaces</c> only sees this type's own base list; this
+		/// walks the base-class chain so interfaces implemented by a base class are also considered.
+		/// (Base interfaces of those interfaces are added separately by <see cref="AddRecursive"/>.)
+		/// </summary>
+		static IEnumerable<INamedTypeSymbol> SelfAndBaseClassInterfaces(INamedTypeSymbol view)
+		{
+			var seen = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+			for (var t = view; t != null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+			{
+				foreach (var iface in t.Interfaces)
+				{
+					if (seen.Add(iface)) yield return iface;
+				}
+			}
+		}
+
+		/// <summary>
+		/// Collects the members a <c>[GenerateInterface]</c> class contributes to its generated interface:
+		/// public, non-static, non-indexer properties (with a public accessor), ordinary methods (excluding
+		/// <c>object</c> overrides), and events — gathered from the class <em>and its base classes</em> (up to
+		/// but excluding <c>object</c>), most-derived first, deduped so an override or <c>new</c> hides the
+		/// inherited member. The class models a (non-view) feature, so its mock must expose the full public
+		/// surface, including members inherited from a base class.
+		/// </summary>
+		public static List<ISymbol> CollectGenerateInterfaceMembers(INamedTypeSymbol typeSymbol)
+		{
+			var result = new List<ISymbol>();
+			var seenMethods = new HashSet<string>();
+			var seenProps = new HashSet<string>();
+			var seenEvents = new HashSet<string>();
+			for (var t = typeSymbol; t != null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+			{
+				foreach (var member in t.GetMembers())
+				{
+					if (member.DeclaredAccessibility != Accessibility.Public) continue;
+					if (member.IsStatic) continue;
+					switch (member)
+					{
+						case IPropertySymbol p when !p.IsIndexer:
+						{
+							var getterPublic = p.GetMethod != null && p.GetMethod.DeclaredAccessibility == Accessibility.Public;
+							var setterPublic = p.SetMethod != null && p.SetMethod.DeclaredAccessibility == Accessibility.Public;
+							if ((getterPublic || setterPublic) && seenProps.Add(p.Name)) result.Add(p);
+							break;
+						}
+						case IMethodSymbol m when m.MethodKind == MethodKind.Ordinary:
+						{
+							if (m.OverriddenMethod?.ContainingType?.SpecialType == SpecialType.System_Object) break;
+							if (seenMethods.Add(m.Name + "`" + m.Arity + m.MethodParams())) result.Add(m);
+							break;
+						}
+						case IEventSymbol e:
+						{
+							if (seenEvents.Add(e.Name)) result.Add(e);
+							break;
+						}
+					}
 				}
 			}
 			return result;
@@ -519,6 +584,7 @@ namespace MockGenereator
 		public static void EmitMockEventMember(this StringBuilder sb, string i, IEventSymbol @event)
 		{
 			var name = @event.Name;
+			var pascal = char.ToUpper(name[0]) + name.Substring(1);
 			var eventType = @event.Type.QualifiedName();
 			var invoke = (@event.Type as INamedTypeSymbol)?.DelegateInvokeMethod;
 
@@ -557,8 +623,87 @@ namespace MockGenereator
 			sb.Append($$"""
 
 				{{i}}public event {{eventType}} {{name}};
-				{{i}}public {{ret}} Raise{{name}}{{paramsText}}{{body}}
+				{{i}}public {{ret}} Raise{{pascal}}{{paramsText}}{{body}}
 				""");
+		}
+
+		/// <summary>
+		/// Emits a mock property as a prefixed public slot plus an explicit interface implementation that
+		/// forwards to it. Used when the same property name is declared with different types across several
+		/// base interfaces, so a single implicit public member cannot satisfy all of them.
+		/// </summary>
+		public static void EmitMockPropertySlot(this StringBuilder sb, string i, IPropertySymbol p, string slotName, string prefix, string explicitTarget)
+		{
+			var t = p.Type.QualifiedName();
+			var hasGet = p.GetMethod != null;
+			var hasSet = p.SetMethod != null;
+			if (hasSet)
+			{
+				var camel = char.ToLower(slotName[0]) + slotName.Substring(1);
+				var backing = "_" + camel + "Backing";
+				var onSet = prefix + "On" + char.ToUpper(p.Name[0]) + p.Name.Substring(1) + "Set";
+				sb.Append($"\n{i}public System.Action<{t}> {onSet} {{ get; set; }}");
+				sb.Append($"\n{i}private {t} {backing};");
+				if (hasGet)
+					sb.Append($"\n{i}public {t} {slotName} {{ get => {backing}; set {{ {backing} = value; {onSet}?.Invoke(value); }} }}");
+				else
+					sb.Append($"\n{i}public {t} {slotName} {{ set {{ {backing} = value; {onSet}?.Invoke(value); }} }}");
+			}
+			else
+			{
+				sb.Append($"\n{i}public {t} {slotName} {{ get; set; }}");
+			}
+			if (explicitTarget != null)
+			{
+				if (hasGet && hasSet)
+					sb.Append($"\n{i}{t} {explicitTarget}.{p.Name} {{ get => {slotName}; set => {slotName} = value; }}");
+				else if (hasGet)
+					sb.Append($"\n{i}{t} {explicitTarget}.{p.Name} => {slotName};");
+				else
+					sb.Append($"\n{i}{t} {explicitTarget}.{p.Name} {{ set => {slotName} = value; }}");
+			}
+		}
+
+		/// <summary>
+		/// Emits a mock event as a prefixed public slot (with RaiseXxx helper) plus an explicit interface
+		/// implementation that forwards add/remove to it. Used when the same event name is declared with
+		/// different delegate types across several base interfaces.
+		/// </summary>
+		public static void EmitMockEventSlot(this StringBuilder sb, string i, IEventSymbol e, string slotName, string explicitTarget)
+		{
+			var eventType = e.Type.QualifiedName();
+			var invoke = (e.Type as INamedTypeSymbol)?.DelegateInvokeMethod;
+			sb.Append($"\n{i}public event {eventType} {slotName};");
+			if (invoke != null)
+			{
+				var ret = invoke.ReturnTypeName();
+				var returnsVoid = invoke.ReturnsVoid;
+				var paramsText = invoke.MethodParams();
+				var argsText = invoke.MethodArgs();
+				var hasOut = invoke.Parameters.Any(p => p.RefKind == RefKind.Out);
+				var pascal = char.ToUpper(slotName[0]) + slotName.Substring(1);
+				string body;
+				if (hasOut)
+				{
+					var outInit = string.Concat(invoke.Parameters
+						.Where(p => p.RefKind == RefKind.Out)
+						.Select(p => $"\n{i}\t{p.Name} = default;"));
+					body = returnsVoid
+						? $"\n{i}{{\n{i}\tif ({slotName} != null) {{ {slotName}.Invoke{argsText}; return; }}{outInit}\n{i}}}"
+						: $"\n{i}{{\n{i}\tif ({slotName} != null) return {slotName}.Invoke{argsText};{outInit}\n{i}\treturn default({ret});\n{i}}}";
+				}
+				else
+				{
+					body = returnsVoid
+						? $" => {slotName}?.Invoke{argsText};"
+						: $" => {slotName} != null ? {slotName}.Invoke{argsText} : default({ret});";
+				}
+				sb.Append($"\n{i}public {ret} Raise{pascal}{paramsText}{body}");
+			}
+			if (explicitTarget != null)
+			{
+				sb.Append($"\n{i}event {eventType} {explicitTarget}.{e.Name} {{ add => {slotName} += value; remove => {slotName} -= value; }}");
+			}
 		}
 
 		/// <summary>
@@ -677,7 +822,8 @@ namespace MockGenereator
 
 			if (explicitTarget != null)
 			{
-				sb.Append($"\n{i}{ret} {explicitTarget}.{method.Name}{generics}{method.MethodParams()}{constraints} => {slotName}{generics}{argsText};");
+				// Explicit interface implementations must NOT restate generic constraints (CS0460).
+				sb.Append($"\n{i}{ret} {explicitTarget}.{method.Name}{generics}{method.MethodParams()} => {slotName}{generics}{argsText};");
 			}
 		}
 
