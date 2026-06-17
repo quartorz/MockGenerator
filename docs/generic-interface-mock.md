@@ -165,7 +165,10 @@ mock.AsIDict<string, int>().value = ...;
 
 ## `[GenerateMockFor]` でも同じ
 
-`[GenerateMockFor(typeof(IFoo<int>))]` / `[GenerateMockFor(typeof(IFoo<string>))]` のようにジェネリック interface を指定した場合も、同じアクセサ方式（`AsIFoo<T>()`）が対象のクラス自身に生成されます。
+`[GenerateMockFor(typeof(IFoo<int>))]` のようにジェネリック interface を指定した場合も、同じアクセサ方式（`AsIFoo<T>()`）が対象のクラス自身に生成されます。
+
+> **`[GenerateMockFor]` は 1 つの interface だけを受け取ります（`AllowMultiple = false`）。**
+> 複数の閉じ型（`IFoo<int>` と `IFoo<string>`）をまとめて Mock したい場合は、**それらを継承した 1 つの interface** を指定してください。指定した interface の基底 interface は再帰的に辿られ、ジェネリックなものはアクセサ方式でまとめて扱われます。
 
 GenerateMockView との違いは2点だけ：
 
@@ -173,8 +176,10 @@ GenerateMockView との違いは2点だけ：
 - アクセサのプロパティは GenerateMockFor 既存の規約に合わせ、get/set の有無に関わらず **常に `On{Name}Set` Action + get/set ストレージ**になります。
 
 ```csharp
-[GenerateMockFor(typeof(IFoo<int>))]
-[GenerateMockFor(typeof(IFoo<string>))]
+// 複数の閉じ型をまとめて Mock したいときは、それらを継承した interface を 1 つ用意する
+public interface IFooAll : IFoo<int>, IFoo<string> { }
+
+[GenerateMockFor(typeof(IFooAll))]
 public partial class MyMock { }
 
 var m = new MyMock();
@@ -183,7 +188,33 @@ m.AsIFoo<string>().value = "x";
 ((IFoo<int>)m).Push(1);   // explicit 実装経由でアクセサに届く
 ```
 
+## 非ジェネリック基底メンバーの衝突（GenerateMockFor）
+
+`[GenerateMockFor(typeof(IRoot))]` の `IRoot` が複数の基底 interface を持つとき、それらの**非ジェネリック**メンバーは次のように扱われます。
+
+- 同名・同シグネチャ（メソッドは引数違い＝オーバーロード含む）→ そのまま public メンバーに統合。
+- **同名だが実体が違う**メンバー → public 1 つでは両立できないため、interface ごとの **explicit interface 実装**になります:
+  - プロパティ／イベントで**型が違う**（例 `int IA.Value` と `string IB.Value`）
+  - メソッドで引数は同じだが**戻り値だけ違う**（C# は戻り値でオーバーロードできない）
+
+explicit 化されたメンバーには、テスト操作用にプレフィックス付きの public スロットも出ます。
+
+```csharp
+// interface IA { int Value { get; set; } int Foo(); }
+// interface IB { string Value { get; set; } string Foo(); }
+// interface IRoot : IA, IB { }
+// [GenerateMockFor(typeof(IRoot))] partial class MyMock { }
+
+var m = new MyMock();
+m.IA_Value = 1;            // IA 側ストレージ
+m.IB_Value = "x";          // IB 側ストレージ（別物）
+((IA)m).Value;             // → IA_Value
+m.IA_FooFunc = () => 1;    // 戻り値違いメソッドも interface ごとに分離
+m.IB_FooFunc = () => "x";
+```
+
 ## 関連
 
 - 非ジェネリック interface・複数ソースの prefix 規約は別途（従来どおり）。
 - setter の `On{Name}Set` Action / backing 規約は通常の Mock 生成と共通です。
+- イベント発火ヘルパは `Raise` + イベント名の先頭大文字化（`onClick` → `RaiseOnClick`）。

@@ -241,7 +241,6 @@ namespace MockGenereator
 		public static MemberFragment[] RenderInterface(INamedTypeSymbol iface)
 		{
 			var result = new List<MemberFragment>();
-			var methods = new Utilities.MethodGroups();
 
 			// Gather the interface plus all its transitive bases, deduped.
 			var allIfaces = new List<INamedTypeSymbol>();
@@ -252,8 +251,12 @@ namespace MockGenereator
 				if (seenIface.Add(baseIface)) allIfaces.Add(baseIface);
 			}
 
+			// Non-generic interfaces contribute flat members; generic interfaces use the accessor scheme.
 			var genericDefs = new List<INamedTypeSymbol>();
 			var genericClosed = new Dictionary<INamedTypeSymbol, List<INamedTypeSymbol>>(SymbolEqualityComparer.Default);
+			var props = new List<IPropertySymbol>();
+			var events = new List<IEventSymbol>();
+			var ordinaryMethods = new List<IMethodSymbol>();
 			foreach (var current in allIfaces)
 			{
 				if (current.OriginalDefinition.TypeParameters.Length > 0)
@@ -274,12 +277,19 @@ namespace MockGenereator
 				{
 					foreach (var member in current.GetMembers())
 					{
-						AddMember(member, result, methods);
+						switch (member)
+						{
+							case IPropertySymbol p when !p.IsIndexer: props.Add(p); break;
+							case IMethodSymbol m when m.MethodKind == MethodKind.Ordinary: ordinaryMethods.Add(m); break;
+							case IEventSymbol e: events.Add(e); break;
+						}
 					}
 				}
 			}
 
-			AppendMethodFragments(result, methods);
+			EmitProperties(result, props);
+			EmitEvents(result, events);
+			EmitMethods(result, ordinaryMethods);
 
 			foreach (var def in genericDefs)
 			{
@@ -287,6 +297,109 @@ namespace MockGenereator
 			}
 
 			return result.ToArray();
+		}
+
+		/// <summary>
+		/// Emits properties gathered from a root interface and its bases. Same-named properties of the same
+		/// type collapse to one implicit public member; same-named properties of <em>different</em> types
+		/// (a conflicting diamond) become per-interface explicit interface implementations, since one public
+		/// member cannot satisfy both.
+		/// </summary>
+		static void EmitProperties(List<MemberFragment> result, List<IPropertySymbol> props)
+		{
+			foreach (var byName in props.GroupBy(p => p.Name))
+			{
+				var list = byName.ToList();
+				var conflict = list.Select(p => p.Type.QualifiedName()).Distinct().Count() > 1;
+				if (!conflict)
+				{
+					using var _ = StringBuilderHolder.Get(out var sb);
+					sb.EmitMockPropertyMember("", list[0]);
+					result.Add(new MemberFragment(MemberKind.Property, list[0].Name, sb.ToString()));
+				}
+				else
+				{
+					var seenTarget = new HashSet<string>();
+					foreach (var p in list)
+					{
+						var ifaceQ = p.ContainingType.QualifiedName();
+						if (!seenTarget.Add(ifaceQ)) continue;
+						var prefix = p.ContainingType.Name + "_";
+						using var _ = StringBuilderHolder.Get(out var sb);
+						sb.EmitMockPropertySlot("", p, prefix + p.Name, prefix, ifaceQ);
+						result.Add(new MemberFragment(MemberKind.Raw, "GPX:" + ifaceQ + "." + p.Name, sb.ToString()));
+					}
+				}
+			}
+		}
+
+		/// <summary>
+		/// Emits events gathered from a root interface and its bases. Mirrors <see cref="EmitProperties"/>:
+		/// same-named events of the same delegate type collapse to one implicit public event; differing
+		/// types become per-interface explicit interface implementations.
+		/// </summary>
+		static void EmitEvents(List<MemberFragment> result, List<IEventSymbol> events)
+		{
+			foreach (var byName in events.GroupBy(e => e.Name))
+			{
+				var list = byName.ToList();
+				var conflict = list.Select(e => e.Type.QualifiedName()).Distinct().Count() > 1;
+				if (!conflict)
+				{
+					using var _ = StringBuilderHolder.Get(out var sb);
+					sb.EmitMockEventMember("", list[0]);
+					result.Add(new MemberFragment(MemberKind.Event, list[0].Name, sb.ToString()));
+				}
+				else
+				{
+					var seenTarget = new HashSet<string>();
+					foreach (var e in list)
+					{
+						var ifaceQ = e.ContainingType.QualifiedName();
+						if (!seenTarget.Add(ifaceQ)) continue;
+						var prefix = e.ContainingType.Name + "_";
+						using var _ = StringBuilderHolder.Get(out var sb);
+						sb.EmitMockEventSlot("", e, prefix + e.Name, ifaceQ);
+						result.Add(new MemberFragment(MemberKind.Raw, "GEX:" + ifaceQ + "." + e.Name, sb.ToString()));
+					}
+				}
+			}
+		}
+
+		/// <summary>
+		/// Emits methods gathered from a root interface and its bases. Overloads (same name, different
+		/// parameters) merge into one public group as usual. The one case a public member cannot express —
+		/// same name and parameters but a <em>different return type</em> across interfaces — is emitted as
+		/// per-interface explicit interface implementations instead.
+		/// </summary>
+		static void EmitMethods(List<MemberFragment> result, List<IMethodSymbol> ordinaryMethods)
+		{
+			static string Sig(IMethodSymbol m) => m.Name + "`" + m.Arity + m.MethodParams();
+
+			var conflictSigs = new HashSet<string>();
+			foreach (var bySig in ordinaryMethods.GroupBy(Sig))
+			{
+				if (bySig.Select(m => m.ReturnTypeName()).Distinct().Count() > 1) conflictSigs.Add(bySig.Key);
+			}
+
+			var methods = new Utilities.MethodGroups();
+			var seenExplicit = new HashSet<string>();
+			foreach (var m in ordinaryMethods)
+			{
+				if (!conflictSigs.Contains(Sig(m)))
+				{
+					methods.Add(m.Name, m);
+					continue;
+				}
+				var ifaceQ = m.ContainingType.QualifiedName();
+				var key = "GMX:" + ifaceQ + "." + m.Name + m.TypeParameters.GenericsParams() + m.MethodParams();
+				if (!seenExplicit.Add(key)) continue;
+				using var _ = StringBuilderHolder.Get(out var sb);
+				sb.EmitMockMethodGroup("", m.ContainingType.Name + "_" + m.Name, new[] { m }, ifaceQ);
+				result.Add(new MemberFragment(MemberKind.Raw, key, sb.ToString()));
+			}
+
+			AppendMethodFragments(result, methods);
 		}
 
 		/// <summary>
@@ -332,6 +445,10 @@ namespace MockGenereator
 				sb.Append($"\n{i}private readonly System.Collections.Generic.Dictionary<System.Type, object> {mapField} = new System.Collections.Generic.Dictionary<System.Type, object>();");
 				sb.Append($"\n{i}public {accName}{tparams} {asName}{tparams}(){tconstraints}");
 				sb.Append($"\n{i}{{");
+				// The implemented closed instantiations are known at generation time; reject any other.
+				var asValidCond = string.Join(" && ", closedList.Select(c => $"typeof({accName}{tparams}) != typeof({accName}{c.TypeArguments.GenericArgs()})"));
+				sb.Append($"\n{inner}if ({asValidCond})");
+				sb.Append($"\n{inner}\tthrow new System.InvalidOperationException(\"This mock does not implement {def.Name} for type argument \" + typeof({accName}{tparams}) + \".\");");
 				sb.Append($"\n{inner}if (!{mapField}.TryGetValue(typeof({accName}{tparams}), out var __a))");
 				sb.Append($"\n{inner}{{");
 				sb.Append($"\n{inner}\t__a = new {accName}{tparams}();");
@@ -397,36 +514,12 @@ namespace MockGenereator
 		{
 			var result = new List<MemberFragment>();
 			var methods = new Utilities.MethodGroups();
-			foreach (var member in typeSymbol.GetMembers())
+			foreach (var member in Utilities.CollectGenerateInterfaceMembers(typeSymbol))
 			{
-				if (!IsInterfaceMember(member)) continue;
 				AddMember(member, result, methods);
 			}
 			AppendMethodFragments(result, methods);
 			return result.ToArray();
-		}
-
-		/// <summary>
-		/// Whether a member of a <c>[GenerateInterface]</c> class becomes part of the generated
-		/// interface. Mirrors the selection in <see cref="GenerateInterfaceGenerator"/>.
-		/// </summary>
-		static bool IsInterfaceMember(ISymbol member)
-		{
-			if (member.DeclaredAccessibility != Accessibility.Public) return false;
-			if (member.IsStatic) return false;
-
-			switch (member)
-			{
-				case IPropertySymbol p when !p.IsIndexer:
-					return (p.GetMethod != null && p.GetMethod.DeclaredAccessibility == Accessibility.Public)
-						|| (p.SetMethod != null && p.SetMethod.DeclaredAccessibility == Accessibility.Public);
-				case IMethodSymbol m when m.MethodKind == MethodKind.Ordinary:
-					return m.OverriddenMethod?.ContainingType?.SpecialType != SpecialType.System_Object;
-				case IEventSymbol:
-					return true;
-				default:
-					return false;
-			}
 		}
 	}
 }
