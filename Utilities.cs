@@ -546,38 +546,90 @@ namespace MockGenereator
 		}
 
 		/// <summary>
-		/// Emits a mock method member: a custom delegate (non-generic) or nested interface (generic),
-		/// a XxxFunc holder property, and a forwarding method that returns default when the Func is unset.
+		/// Collects ordinary methods into ordered groups keyed by slot name, so overloads
+		/// (same slot name, different signatures) end up in one group. Duplicate signatures
+		/// (e.g. the same method reached through several base interfaces) are dropped.
 		/// </summary>
-		public static void EmitMockMethodMember(this StringBuilder sb, string i, IMethodSymbol method)
+		public sealed class MethodGroups
 		{
-			var name = method.Name;
-			var funcName = name + "Func";
-			var delegateName = name + "Delegate";
+			readonly List<KeyValuePair<string, List<IMethodSymbol>>> _groups = new List<KeyValuePair<string, List<IMethodSymbol>>>();
+			readonly Dictionary<string, int> _index = new Dictionary<string, int>();
+			readonly Dictionary<string, string> _explicitTargets = new Dictionary<string, string>();
+			readonly HashSet<string> _seenSig = new HashSet<string>();
+
+			/// <summary>Adds an overload to the group named <paramref name="slotName"/>. Returns false if its signature was already present.</summary>
+			public bool Add(string slotName, IMethodSymbol method, string explicitTarget = null)
+			{
+				if (!_seenSig.Add(slotName + "`" + method.Arity + method.MethodParams())) return false;
+				if (!_index.TryGetValue(slotName, out var idx))
+				{
+					idx = _groups.Count;
+					_groups.Add(new KeyValuePair<string, List<IMethodSymbol>>(slotName, new List<IMethodSymbol>()));
+					_index[slotName] = idx;
+					if (explicitTarget != null) _explicitTargets[slotName] = explicitTarget;
+				}
+				_groups[idx].Value.Add(method);
+				return true;
+			}
+
+			public void EmitAll(StringBuilder sb, string i)
+			{
+				foreach (var g in _groups)
+				{
+					_explicitTargets.TryGetValue(g.Key, out var target);
+					sb.EmitMockMethodGroup(i, g.Key, g.Value, target);
+				}
+			}
+		}
+
+		/// <summary>
+		/// Emits a mock for one method-name group. A single non-generic method keeps the lambda-assignable
+		/// delegate form ({slot}Delegate + {slot}Func). Overload groups (and single generic methods) use a
+		/// nested interface I{slot}Delegate carrying one overloaded Call per overload. In every case a
+		/// {slot}Func holder, a forwarding method per overload (returns default when the Func is unset), and —
+		/// when the slot is renamed or implemented explicitly — explicit interface implementations are emitted.
+		/// </summary>
+		public static void EmitMockMethodGroup(this StringBuilder sb, string i, string slotName, IReadOnlyList<IMethodSymbol> overloads, string explicitTarget = null)
+		{
+			var funcName = slotName + "Func";
+
+			if (overloads.Count == 1 && !overloads[0].IsGenericMethod)
+			{
+				var m = overloads[0];
+				var delegateName = slotName + "Delegate";
+				sb.Append($"\n{i}public delegate {m.ReturnTypeName()} {delegateName}{m.MethodParams()};");
+				sb.Append($"\n{i}public {delegateName} {funcName} {{ get; set; }}");
+				EmitForwarder(sb, i, m, slotName, funcName, "Invoke", explicitTarget);
+				return;
+			}
+
+			var ifaceName = "I" + slotName + "Delegate";
+			sb.Append($"\n{i}public interface {ifaceName}");
+			sb.Append($"\n{i}{{");
+			foreach (var m in overloads)
+			{
+				var g = m.TypeParameters.GenericsParams();
+				var c = m.TypeParameters.GenericsConstraints();
+				sb.Append($"\n{i}\t{m.ReturnTypeName()} Call{g}{m.MethodParams()}{c};");
+			}
+			sb.Append($"\n{i}}}");
+			sb.Append($"\n{i}public {ifaceName} {funcName} {{ get; set; }}");
+
+			foreach (var m in overloads)
+			{
+				EmitForwarder(sb, i, m, slotName, funcName, "Call" + m.TypeParameters.GenericsParams(), explicitTarget);
+			}
+		}
+
+		static void EmitForwarder(StringBuilder sb, string i, IMethodSymbol method, string slotName, string funcName, string invoke, string explicitTarget)
+		{
 			var ret = method.ReturnTypeName();
 			var returnsVoid = method.ReturnsVoid;
-			var isGeneric = method.IsGenericMethod;
 			var generics = method.TypeParameters.GenericsParams();
 			var constraints = method.TypeParameters.GenericsConstraints();
-			var paramsText = method.MethodParams();
 			var paramsTextWD = method.MethodParams(withDefaults: true);
 			var argsText = method.MethodArgs();
 			var hasOut = method.Parameters.Any(p => p.RefKind == RefKind.Out);
-			var invoke = isGeneric ? "Call" + generics : "Invoke";
-
-			if (isGeneric)
-			{
-				delegateName = "I" + delegateName;
-			}
-
-			var typeDecl = isGeneric
-				? $$"""
-					{{i}}public interface {{delegateName}}
-					{{i}}{
-					{{i}}	{{ret}} Call{{generics}}{{paramsText}}{{constraints}};
-					{{i}}}
-					"""
-				: $"{i}public delegate {ret} {delegateName}{paramsText};";
 
 			string body;
 			if (hasOut)
@@ -596,12 +648,12 @@ namespace MockGenereator
 					: $" => {funcName} != null ? {funcName}.{invoke}{argsText} : default({ret});";
 			}
 
-			sb.Append($$"""
+			sb.Append($"\n{i}public {ret} {slotName}{generics}{paramsTextWD}{constraints}{body}");
 
-				{{typeDecl}}
-				{{i}}public {{delegateName}} {{funcName}} { get; set; }
-				{{i}}public {{ret}} {{name}}{{generics}}{{paramsTextWD}}{{constraints}}{{body}}
-				""");
+			if (explicitTarget != null)
+			{
+				sb.Append($"\n{i}{ret} {explicitTarget}.{method.Name}{generics}{method.MethodParams()}{constraints} => {slotName}{generics}{argsText};");
+			}
 		}
 
 		/// <summary>

@@ -375,6 +375,7 @@ namespace MockGenereator
 						{
 					""");
 
+				var ownMethods = new Utilities.MethodGroups();
 				foreach (var member in typeSymbol.GetMembers())
 				{
 					if (member is IFieldSymbol field)
@@ -469,7 +470,7 @@ namespace MockGenereator
 						{
 							continue;
 						}
-						sb.EmitMockMethodMember("\t\t", method);
+						ownMethods.Add(method.Name, method);
 					}
 					else if (member is IEventSymbol @event)
 					{
@@ -483,16 +484,20 @@ namespace MockGenereator
 					}
 				}
 
+				ownMethods.EmitAll(sb, "\t\t");
+
 				// Iface-inherited members (multi-interface support).
 				var emittedSlots = new HashSet<string>();
+				var ifaceMethods = new Utilities.MethodGroups();
 				foreach (var iface in inputCollected)
 				{
-					EmitInterfaceMembers(sb, typeSymbol, iface, inputMulti, emittedSlots);
+					EmitInterfaceMembers(sb, typeSymbol, iface, inputMulti, emittedSlots, ifaceMethods);
 				}
 				foreach (var iface in outputCollected)
 				{
-					EmitInterfaceMembers(sb, typeSymbol, iface, outputMulti, emittedSlots);
+					EmitInterfaceMembers(sb, typeSymbol, iface, outputMulti, emittedSlots, ifaceMethods);
 				}
+				ifaceMethods.EmitAll(sb, "\t\t");
 
 				sb.Append("""
 
@@ -525,7 +530,7 @@ namespace MockGenereator
 			return sb.ToString();
 		}
 
-		static void EmitInterfaceMembers(StringBuilder sb, INamedTypeSymbol view, INamedTypeSymbol iface, bool multiSource, HashSet<string> emittedSlots)
+		static void EmitInterfaceMembers(StringBuilder sb, INamedTypeSymbol view, INamedTypeSymbol iface, bool multiSource, HashSet<string> emittedSlots, Utilities.MethodGroups methods)
 		{
 			var ifaceQ = iface.QualifiedName();
 			foreach (var member in iface.GetMembers())
@@ -545,8 +550,7 @@ namespace MockGenereator
 				else if (member is IMethodSymbol m && m.MethodKind == MethodKind.Ordinary)
 				{
 					var (slotName, isExplicit, _) = DecideSlot(view, iface, m, multiSource);
-					if (!emittedSlots.Add("M:" + slotName + m.MethodParams())) continue;
-					EmitMethodSlot(sb, m, slotName, (isExplicit || multiSource) ? ifaceQ : null);
+					methods.Add(slotName, m, (isExplicit || multiSource) ? ifaceQ : null);
 				}
 			}
 		}
@@ -635,52 +639,6 @@ namespace MockGenereator
 					sb.Append($"\n		{t} {explicitTarget}.{p.Name} => {slotName};");
 				else
 					sb.Append($"\n		{t} {explicitTarget}.{p.Name} {{ set => {slotName} = value; }}");
-			}
-		}
-
-		static void EmitMethodSlot(StringBuilder sb, IMethodSymbol m, string slotName, string explicitTarget)
-		{
-			var ret = m.ReturnTypeName();
-			var returnsVoid = m.ReturnsVoid;
-			var isGeneric = m.IsGenericMethod;
-			var generics = m.TypeParameters.GenericsParams();
-			var constraints = m.TypeParameters.GenericsConstraints();
-			var paramsText = m.MethodParams();
-			var paramsTextWD = m.MethodParams(withDefaults: true);
-			var argsText = m.MethodArgs();
-			var hasOut = m.Parameters.Any(p => p.RefKind == RefKind.Out);
-			var funcName = slotName + "Func";
-			var delegateName = slotName + "Delegate";
-			var invoke = isGeneric ? "Call" + generics : "Invoke";
-			if (isGeneric)
-			{
-				delegateName = "I" + delegateName;
-			}
-			var typeDecl = isGeneric
-				? $"\n		public interface {delegateName}\n		{{\n			{ret} Call{generics}{paramsText}{constraints};\n		}}"
-				: $"\n		public delegate {ret} {delegateName}{paramsText};";
-			string body;
-			if (hasOut)
-			{
-				var outInit = string.Concat(m.Parameters
-					.Where(p => p.RefKind == RefKind.Out)
-					.Select(p => $"\n\t\t\t{p.Name} = default;"));
-				body = returnsVoid
-					? $"\n		{{\n\t\t\tif ({funcName} != null) {{ {funcName}.{invoke}{argsText}; return; }}{outInit}\n\t\t}}"
-					: $"\n		{{\n\t\t\tif ({funcName} != null) return {funcName}.{invoke}{argsText};{outInit}\n\t\t\treturn default({ret});\n\t\t}}";
-			}
-			else
-			{
-				body = returnsVoid
-					? $" => {funcName}?.{invoke}{argsText};"
-					: $" => {funcName} != null ? {funcName}.{invoke}{argsText} : default({ret});";
-			}
-			sb.Append(typeDecl);
-			sb.Append($"\n		public {delegateName} {funcName} {{ get; set; }}");
-			sb.Append($"\n		public {ret} {slotName}{generics}{paramsTextWD}{constraints}{body}");
-			if (explicitTarget != null)
-			{
-				sb.Append($"\n		{ret} {explicitTarget}.{m.Name}{generics}{paramsText}{constraints} => {slotName}{generics}{argsText};");
 			}
 		}
 

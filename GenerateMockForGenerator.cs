@@ -94,18 +94,20 @@ namespace MockGenereator
 					""");
 			}
 
-			var seenMethodFunc = new HashSet<string>();
 			var seenProperty = new HashSet<string>();
 			var seenEvent = new HashSet<string>();
+			var methods = new Utilities.MethodGroups();
 
 			foreach (var iface in interfaces)
 			{
-				EmitInterface(sb, memberIndent, iface, seenMethodFunc, seenProperty, seenEvent);
+				EmitInterface(sb, memberIndent, iface, methods, seenProperty, seenEvent);
 				foreach (var baseIface in iface.AllInterfaces)
 				{
-					EmitInterface(sb, memberIndent, baseIface, seenMethodFunc, seenProperty, seenEvent);
+					EmitInterface(sb, memberIndent, baseIface, methods, seenProperty, seenEvent);
 				}
 			}
+
+			methods.EmitAll(sb, memberIndent);
 
 			if (ns != null)
 			{
@@ -125,7 +127,7 @@ namespace MockGenereator
 			return new Result { HintName = hint, Code = sb.ToString() };
 		}
 
-		static void EmitInterface(StringBuilder sb, string i, INamedTypeSymbol iface, HashSet<string> seenMethodFunc, HashSet<string> seenProperty, HashSet<string> seenEvent)
+		static void EmitInterface(StringBuilder sb, string i, INamedTypeSymbol iface, Utilities.MethodGroups methods, HashSet<string> seenProperty, HashSet<string> seenEvent)
 		{
 			foreach (var member in iface.GetMembers())
 			{
@@ -146,12 +148,7 @@ namespace MockGenereator
 						}
 						break;
 					case IMethodSymbol m when m.MethodKind == MethodKind.Ordinary:
-						if (!seenMethodFunc.Add(m.Name + "Func"))
-						{
-							sb.Append($"\n{i}#warning GenerateMockFor: overload for '{m.Name}' was skipped (Func name '{m.Name}Func' already used)");
-							break;
-						}
-						sb.EmitMockMethodMember(i, m);
+						methods.Add(m.Name, m);
 						break;
 					case IEventSymbol e:
 						if (!seenEvent.Add(e.Name)) break;
