@@ -2,6 +2,8 @@ using Microsoft.CodeAnalysis;
 using MockGenerator;
 using System;
 
+#nullable enable
+
 namespace MockGenereator
 {
 	internal static class Errors
@@ -114,6 +116,28 @@ namespace MockGenereator
 				severity: DiagnosticSeverity.Error,
 				location: LocationInfo.From(symbol),
 				messageArgs: new[] { symbol.ToString() });
+		}
+
+		public static DiagnosticInfo CannotResolveMockInterface(string simpleName, LocationInfo? location)
+		{
+			return new DiagnosticInfo(
+				id: "MockGen011",
+				title: "Source Generator Error",
+				messageFormat: "GenerateMockFor: interface \"{0}\" could not be resolved. If it is produced by [GenerateInterface], make sure that class is in the same compilation.",
+				severity: DiagnosticSeverity.Error,
+				location: location,
+				messageArgs: new[] { simpleName });
+		}
+
+		public static DiagnosticInfo AmbiguousMockInterface(string simpleName, LocationInfo? location)
+		{
+			return new DiagnosticInfo(
+				id: "MockGen012",
+				title: "Source Generator Error",
+				messageFormat: "GenerateMockFor: interface \"{0}\" is ambiguous; multiple [GenerateInterface] classes produce an interface with that name. Qualify the type to disambiguate.",
+				severity: DiagnosticSeverity.Error,
+				location: location,
+				messageArgs: new[] { simpleName });
 		}
 	}
 }
