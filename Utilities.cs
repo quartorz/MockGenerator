@@ -235,7 +235,7 @@ namespace MockGenereator
 						case IMethodSymbol m when m.MethodKind == MethodKind.Ordinary:
 						{
 							if (m.OverriddenMethod?.ContainingType?.SpecialType == SpecialType.System_Object) break;
-							if (seenMethods.Add(m.Name + "`" + m.Arity + m.MethodParams())) result.Add(m);
+							if (seenMethods.Add(m.Name + "`" + m.Arity + m.MethodParamTypes())) result.Add(m);
 							break;
 						}
 						case IEventSymbol e:
@@ -523,6 +523,28 @@ namespace MockGenereator
 			return sb.ToString();
 		}
 
+		/// <summary>
+		/// Signature key for dedup: RefKind + parameter types only, no parameter names.
+		/// C# signatures ignore parameter names, so override/new with renamed params must collide here.
+		/// </summary>
+		public static string MethodParamTypes(this IMethodSymbol symbol)
+		{
+			using var _ = StringBuilderHolder.Get(out var sb);
+			sb.Append('(');
+			var ps = symbol.Parameters;
+			for (var i = 0; i < ps.Length; ++i)
+			{
+				var p = ps[i];
+				if (i != 0)
+				{
+					sb.Append(", ");
+				}
+				sb.Append($"{p.RefKind.RefKindModifier()}{p.Type.QualifiedName()}");
+			}
+			sb.Append(')');
+			return sb.ToString();
+		}
+
 		public static string MethodArgs(this IMethodSymbol symbol)
 		{
 			using var _ = StringBuilderHolder.Get(out var sb);
@@ -721,7 +743,7 @@ namespace MockGenereator
 			/// <summary>Adds an overload to the group named <paramref name="slotName"/>. Returns false if its signature was already present.</summary>
 			public bool Add(string slotName, IMethodSymbol method, string explicitTarget = null)
 			{
-				if (!_seenSig.Add(slotName + "`" + method.Arity + method.MethodParams())) return false;
+				if (!_seenSig.Add(slotName + "`" + method.Arity + method.MethodParamTypes())) return false;
 				if (!_index.TryGetValue(slotName, out var idx))
 				{
 					idx = _groups.Count;

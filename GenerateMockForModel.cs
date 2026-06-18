@@ -374,7 +374,7 @@ namespace MockGenereator
 		/// </summary>
 		static void EmitMethods(List<MemberFragment> result, List<IMethodSymbol> ordinaryMethods)
 		{
-			static string Sig(IMethodSymbol m) => m.Name + "`" + m.Arity + m.MethodParams();
+			static string Sig(IMethodSymbol m) => m.Name + "`" + m.Arity + m.MethodParamTypes();
 
 			var conflictSigs = new HashSet<string>();
 			foreach (var bySig in ordinaryMethods.GroupBy(Sig))
@@ -392,7 +392,7 @@ namespace MockGenereator
 					continue;
 				}
 				var ifaceQ = m.ContainingType.QualifiedName();
-				var key = "GMX:" + ifaceQ + "." + m.Name + m.TypeParameters.GenericsParams() + m.MethodParams();
+				var key = "GMX:" + ifaceQ + "." + m.Name + m.TypeParameters.GenericsParams() + m.MethodParamTypes();
 				if (!seenExplicit.Add(key)) continue;
 				using var _ = StringBuilderHolder.Get(out var sb);
 				sb.EmitMockMethodGroup("", m.ContainingType.Name + "_" + m.Name, new[] { m }, ifaceQ);
@@ -498,7 +498,7 @@ namespace MockGenereator
 							var args = m.MethodArgs();
 							// Explicit interface implementations must NOT restate generic constraints (CS0460).
 							var text = $"\n{ret} {target}.{m.Name}{g}{prmsNoDef} => {asCall}.{m.Name}{g}{args};";
-							result.Add(new MemberFragment(MemberKind.Raw, "GMX:" + target + "." + m.Name + g + prmsNoDef, text));
+							result.Add(new MemberFragment(MemberKind.Raw, "GMX:" + target + "." + m.Name + g + m.MethodParamTypes(), text));
 							break;
 						}
 					}
