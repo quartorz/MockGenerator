@@ -10,20 +10,27 @@ namespace MockGenerator
 	{
 		public const string AttributeNamespace = "MockGenerator";
 
+		// 生成される 2 面の語彙。値を変えれば属性名も生成 interface 名もまとめて変わる。
+		// UserSide = 画面から入ってくるもの（ユーザー操作）、AppSide = 画面へ出ていくもの（表示の書き換え）。
+		public const string UserSideName = "Input";
+		public const string AppSideName = "Output";
+		public const string UserSideAttributeName = UserSideName + "Attribute";
+		public const string AppSideAttributeName = AppSideName + "Attribute";
+
 		public static bool HasInputGetter(this IPropertySymbol p)
 		{
-			return p.GetMethod != null && p.GetMethod.HasAttribute(AttributeNamespace, "InputAttribute");
+			return p.GetMethod != null && p.GetMethod.HasAttribute(AttributeNamespace, UserSideAttributeName);
 		}
 
 		public static bool HasOutputGetter(this IPropertySymbol p)
 		{
-			return p.GetMethod != null && p.GetMethod.HasAttribute(AttributeNamespace, "OutputAttribute");
+			return p.GetMethod != null && p.GetMethod.HasAttribute(AttributeNamespace, AppSideAttributeName);
 		}
 
 		public static bool IsTracked(this IPropertySymbol p)
 		{
 			return p.HasInputGetter() || p.HasOutputGetter()
-			|| (p.SetMethod != null && p.SetMethod.HasAttribute(AttributeNamespace, "OutputAttribute"));
+			|| (p.SetMethod != null && p.SetMethod.HasAttribute(AttributeNamespace, AppSideAttributeName));
 		}
 
 		public static string ResolveMockTypeName(this ITypeSymbol fieldType)
@@ -66,23 +73,23 @@ namespace MockGenerator
 					{
 						return new ResolveResult { Status = ResolveStatus.AsNotImplemented, AsTarget = asType };
 					}
-					bool hasInput = asType.HasAttribute(AttributeNamespace, "InputAttribute");
-					bool hasOutput = asType.HasAttribute(AttributeNamespace, "OutputAttribute");
+					bool hasInput = asType.HasAttribute(AttributeNamespace, UserSideAttributeName);
+					bool hasOutput = asType.HasAttribute(AttributeNamespace, AppSideAttributeName);
 					if (input && !hasInput)
 					{
-						return new ResolveResult { Status = ResolveStatus.AsMissingAttribute, AsTarget = asType, RequiredAttribute = "InputAttribute" };
+						return new ResolveResult { Status = ResolveStatus.AsMissingAttribute, AsTarget = asType, RequiredAttribute = UserSideAttributeName };
 					}
 					if (output && !hasOutput)
 					{
-						return new ResolveResult { Status = ResolveStatus.AsMissingAttribute, AsTarget = asType, RequiredAttribute = "OutputAttribute" };
+						return new ResolveResult { Status = ResolveStatus.AsMissingAttribute, AsTarget = asType, RequiredAttribute = AppSideAttributeName };
 					}
 					return new ResolveResult { Status = ResolveStatus.Found, Name = asType.QualifiedName() };
 				}
 			}
 
 			var matches = fieldType.AllInterfaces.Where(x =>
-				(!input || x.HasAttribute(AttributeNamespace, "InputAttribute")) &&
-				(!output || x.HasAttribute(AttributeNamespace, "OutputAttribute"))).ToList();
+				(!input || x.HasAttribute(AttributeNamespace, UserSideAttributeName)) &&
+				(!output || x.HasAttribute(AttributeNamespace, AppSideAttributeName))).ToList();
 
 			if (matches.Count > 1)
 			{
@@ -97,7 +104,7 @@ namespace MockGenerator
 				named.HasAttribute(AttributeNamespace, "GenerateViewInterfacesAttribute"))
 			{
 				var ns = named.ContainingNamespace.IsGlobalNamespace ? "Generated." : named.ContainingNamespace + ".Generated.";
-				var suffix = (input && output) ? "" : (input ? "Input" : "Output");
+				var suffix = (input && output) ? "" : (input ? UserSideName : AppSideName);
 				return new ResolveResult { Status = ResolveStatus.Found, Name = $"global::{ns}I{named.Name}{suffix}{named.TypeArguments.GenericArgs()}" };
 			}
 
@@ -111,12 +118,12 @@ namespace MockGenerator
 				var ac = attr.AttributeClass;
 				if (ac == null) continue;
 				if (ac.ContainingNamespace?.ToString() != AttributeNamespace) continue;
-				if (input && ac.MetadataName == "InputAttribute")
+				if (input && ac.MetadataName == UserSideAttributeName)
 				{
 					var v = FindNamedArg(attr, "As");
 					if (v != null) return v;
 				}
-				if (output && ac.MetadataName == "OutputAttribute")
+				if (output && ac.MetadataName == AppSideAttributeName)
 				{
 					var v = FindNamedArg(attr, "As");
 					if (v != null) return v;
@@ -144,7 +151,7 @@ namespace MockGenerator
 				var ac = attr.AttributeClass;
 				if (ac == null) continue;
 				if (ac.ContainingNamespace?.ToString() != AttributeNamespace) continue;
-				if (ac.MetadataName != "InputAttribute" && ac.MetadataName != "OutputAttribute") continue;
+				if (ac.MetadataName != UserSideAttributeName && ac.MetadataName != AppSideAttributeName) continue;
 				if (FindNamedArg(attr, "As") != null) return true;
 			}
 			return false;
@@ -253,8 +260,8 @@ namespace MockGenerator
 
 		static bool IsAttributed(INamedTypeSymbol iface, bool input, bool output)
 		{
-			if (input && !iface.HasAttribute(AttributeNamespace, "InputAttribute")) return false;
-			if (output && !iface.HasAttribute(AttributeNamespace, "OutputAttribute")) return false;
+			if (input && !iface.HasAttribute(AttributeNamespace, UserSideAttributeName)) return false;
+			if (output && !iface.HasAttribute(AttributeNamespace, AppSideAttributeName)) return false;
 			return input || output;
 		}
 

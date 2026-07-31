@@ -12,7 +12,11 @@ namespace MockGenerator
 	public class MockGenerator : IIncrementalGenerator
 	{
 		const string AttributeNamespace = Utilities.AttributeNamespace;
-		
+		const string UserSideName = Utilities.UserSideName;
+		const string AppSideName = Utilities.AppSideName;
+		const string UserSideAttributeName = Utilities.UserSideAttributeName;
+		const string AppSideAttributeName = Utilities.AppSideAttributeName;
+
 		public void Initialize(IncrementalGeneratorInitializationContext context)
 		{
 			context.RegisterPostInitializationOutput(ctx =>
@@ -28,25 +32,25 @@ namespace MockGenerator
 						}
 					}
 					""");
-				ctx.AddSource("InputAttribute.cs", $$"""
+				ctx.AddSource($"{UserSideAttributeName}.cs", $$"""
 					using System;
 
 					namespace {{AttributeNamespace}}
 					{
 						[AttributeUsage(AttributeTargets.Interface | AttributeTargets.Field | AttributeTargets.Method | AttributeTargets.Event, AllowMultiple = false, Inherited = false)]
-						internal sealed class InputAttribute : Attribute
+						internal sealed class {{UserSideAttributeName}} : Attribute
 						{
 							public Type As { get; set; }
 						}
 					}
 					""");
-				ctx.AddSource("OutputAttribute.cs", $$"""
+				ctx.AddSource($"{AppSideAttributeName}.cs", $$"""
 					using System;
 
 					namespace {{AttributeNamespace}}
 					{
 						[AttributeUsage(AttributeTargets.Interface | AttributeTargets.Field | AttributeTargets.Method | AttributeTargets.Event, AllowMultiple = false, Inherited = false)]
-						internal sealed class OutputAttribute : Attribute
+						internal sealed class {{AppSideAttributeName}} : Attribute
 						{
 							public Type As { get; set; }
 						}
@@ -121,7 +125,7 @@ namespace MockGenerator
 			foreach (var member in typeSymbol.GetMembers())
 			{
 				if (member is IPropertySymbol prop && prop.SetMethod != null
-					&& prop.SetMethod.HasAttribute(AttributeNamespace, "InputAttribute"))
+					&& prop.SetMethod.HasAttribute(AttributeNamespace, UserSideAttributeName))
 				{
 					diagnostics.Add(Errors.InputOnSetter(prop.SetMethod));
 				}
@@ -138,15 +142,15 @@ namespace MockGenerator
 			{
 				if (member is IFieldSymbol field)
 				{
-					var fi = field.HasAttribute(AttributeNamespace, "InputAttribute");
-					var fo = field.HasAttribute(AttributeNamespace, "OutputAttribute");
+					var fi = field.HasAttribute(AttributeNamespace, UserSideAttributeName);
+					var fo = field.HasAttribute(AttributeNamespace, AppSideAttributeName);
 					if (fi && fo) inout.Add(field);
 					else if (fi) @in.Add(field);
 					else if (fo) @out.Add(field);
 				}
 			}
 
-			Emit(files, diagnostics, $"{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}Input.cs", sb =>
+			Emit(files, diagnostics, $"{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}{UserSideName}.cs", sb =>
 			{
 				sb.Append($$"""
 				namespace {{InterfaceNamespace(typeSymbol)}}
@@ -154,8 +158,8 @@ namespace MockGenerator
 					/// <summary>
 					/// <see cref="{{typeSymbol.ToCref()}}"/>
 					/// </summary>
-					[{{AttributeNamespace}}.Input]
-					public interface I{{typeSymbol.Name}}Input{{typeSymbol.TypeParameters.GenericsParams()}}{{InheritanceClause(directInputIfaces)}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
+					[{{AttributeNamespace}}.{{UserSideName}}]
+					public interface I{{typeSymbol.Name}}{{UserSideName}}{{typeSymbol.TypeParameters.GenericsParams()}}{{InheritanceClause(directInputIfaces)}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
 					{
 				""");
 
@@ -163,7 +167,7 @@ namespace MockGenerator
 				{
 					if (member is IFieldSymbol field)
 					{
-						if (!field.HasAttribute(AttributeNamespace, "InputAttribute")) continue;
+						if (!field.HasAttribute(AttributeNamespace, UserSideAttributeName)) continue;
 						var ifield = ResolveFieldInterface(field, input: true, output: false, diagnostics);
 						if (ifield != null)
 						{
@@ -178,12 +182,12 @@ namespace MockGenerator
 					}
 					else if (member is IMethodSymbol method && method.MethodKind == MethodKind.Ordinary)
 					{
-						if (!method.HasAttribute(AttributeNamespace, "InputAttribute")) continue;
+						if (!method.HasAttribute(AttributeNamespace, UserSideAttributeName)) continue;
 						sb.Append($"\n		{method.ReturnTypeName()} {method.Name}{method.MethodParams()};");
 					}
 					else if (member is IEventSymbol @event)
 					{
-						if (!@event.HasAttribute(AttributeNamespace, "InputAttribute")) continue;
+						if (!@event.HasAttribute(AttributeNamespace, UserSideAttributeName)) continue;
 						sb.Append($"\n		event {@event.Type.QualifiedName()} {@event.Name};");
 					}
 				}
@@ -195,7 +199,7 @@ namespace MockGenerator
 				""");
 			});
 
-			Emit(files, diagnostics, $"{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}Output.cs", sb =>
+			Emit(files, diagnostics, $"{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}{AppSideName}.cs", sb =>
 			{
 				sb.Append($$"""
 				namespace {{InterfaceNamespace(typeSymbol)}}
@@ -203,8 +207,8 @@ namespace MockGenerator
 					/// <summary>
 					/// <see cref="{{typeSymbol.ToCref()}}"/>
 					/// </summary>
-					[{{AttributeNamespace}}.Output]
-					public interface I{{typeSymbol.Name}}Output{{typeSymbol.TypeParameters.GenericsParams()}}{{InheritanceClause(directOutputIfaces)}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
+					[{{AttributeNamespace}}.{{AppSideName}}]
+					public interface I{{typeSymbol.Name}}{{AppSideName}}{{typeSymbol.TypeParameters.GenericsParams()}}{{InheritanceClause(directOutputIfaces)}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
 					{
 				""");
 
@@ -212,7 +216,7 @@ namespace MockGenerator
 				{
 					if (member is IFieldSymbol field)
 					{
-						if (!field.HasAttribute(AttributeNamespace, "OutputAttribute")) continue;
+						if (!field.HasAttribute(AttributeNamespace, AppSideAttributeName)) continue;
 						var ifield = ResolveFieldInterface(field, input: false, output: true, diagnostics);
 						if (ifield != null)
 						{
@@ -221,7 +225,7 @@ namespace MockGenerator
 					}
 					else if (member is IMethodSymbol method && method.MethodKind == MethodKind.Ordinary)
 					{
-						if (!method.HasAttribute(AttributeNamespace, "OutputAttribute")) continue;
+						if (!method.HasAttribute(AttributeNamespace, AppSideAttributeName)) continue;
 						sb.Append($"\n		{method.ReturnTypeName()} {method.Name}{method.MethodParams()};");
 					}
 					else if (member is IPropertySymbol property)
@@ -244,7 +248,7 @@ namespace MockGenerator
 					}
 					else if (member is IEventSymbol @event)
 					{
-						if (!@event.HasAttribute(AttributeNamespace, "OutputAttribute"))
+						if (!@event.HasAttribute(AttributeNamespace, AppSideAttributeName))
 						{
 							continue;
 						}
@@ -268,8 +272,8 @@ namespace MockGenerator
 					/// <see cref="{{typeSymbol.ToCref()}}"/>
 					/// </summary>
 					public interface I{{typeSymbol.Name}}{{typeSymbol.TypeParameters.GenericsParams()}} :
-						I{{typeSymbol.Name}}Input{{typeSymbol.TypeParameters.GenericsParams()}},
-						I{{typeSymbol.Name}}Output{{typeSymbol.TypeParameters.GenericsParams()}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
+						I{{typeSymbol.Name}}{{UserSideName}}{{typeSymbol.TypeParameters.GenericsParams()}},
+						I{{typeSymbol.Name}}{{AppSideName}}{{typeSymbol.TypeParameters.GenericsParams()}}{{typeSymbol.TypeParameters.GenericsConstraints()}}
 					{
 					}
 				}
@@ -319,8 +323,8 @@ namespace MockGenerator
 					{
 						var prop = field.ToPropertyName();
 						var generics = typeSymbol.TypeParameters.GenericsParams();
-						sb.Append($"\n		{inputName} global::{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {field.Name};");
-						sb.Append($"\n		{outputName} global::{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}Output{generics}.{prop} => {field.Name};");
+						sb.Append($"\n		{inputName} global::{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}{UserSideName}{generics}.{prop} => {field.Name};");
+						sb.Append($"\n		{outputName} global::{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}{AppSideName}{generics}.{prop} => {field.Name};");
 					}
 				}
 
@@ -379,8 +383,8 @@ namespace MockGenerator
 				{
 					if (member is IFieldSymbol field)
 					{
-						var isInput = field.HasAttribute(AttributeNamespace, "InputAttribute");
-						var isOutput = field.HasAttribute(AttributeNamespace, "OutputAttribute");
+						var isInput = field.HasAttribute(AttributeNamespace, UserSideAttributeName);
+						var isOutput = field.HasAttribute(AttributeNamespace, AppSideAttributeName);
 						if (!isInput && !isOutput)
 						{
 							continue;
@@ -412,11 +416,11 @@ namespace MockGenerator
 						{
 							if (isInput)
 							{
-								sb.Append($"\n		{inputName} global::{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {prop};");
+								sb.Append($"\n		{inputName} global::{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}{UserSideName}{generics}.{prop} => {prop};");
 							}
 							if (isOutput)
 							{
-								sb.Append($"\n		{outputName} global::{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}Output{generics}.{prop} => {prop};");
+								sb.Append($"\n		{outputName} global::{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}{AppSideName}{generics}.{prop} => {prop};");
 							}
 						}
 					}
@@ -430,7 +434,7 @@ namespace MockGenerator
 						var generics = typeSymbol.TypeParameters.GenericsParams();
 						var rawType = property.Type.QualifiedName();
 						var hasOutputSetter = property.SetMethod != null
-							&& property.SetMethod.HasAttribute(AttributeNamespace, "OutputAttribute");
+							&& property.SetMethod.HasAttribute(AttributeNamespace, AppSideAttributeName);
 						if (hasOutputSetter)
 						{
 							var pascal = char.ToUpper(prop[0]) + prop.Substring(1);
@@ -450,7 +454,7 @@ namespace MockGenerator
 							var inputName = property.Type.ResolveViewInterfaceName(input: true, output: false);
 							if (inputName != null && inputName != rawType)
 							{
-								sb.Append($"\n		{inputName} global::{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}Input{generics}.{prop} => {prop};");
+								sb.Append($"\n		{inputName} global::{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}{UserSideName}{generics}.{prop} => {prop};");
 							}
 						}
 						if (hasViewIfaces && property.HasOutputGetter())
@@ -458,14 +462,14 @@ namespace MockGenerator
 							var outputName = property.Type.ResolveViewInterfaceName(input: false, output: true);
 							if (outputName != null && outputName != rawType)
 							{
-								sb.Append($"\n		{outputName} global::{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}Output{generics}.{prop} => {prop};");
+								sb.Append($"\n		{outputName} global::{InterfaceNamespace(typeSymbol)}.I{typeSymbol.Name}{AppSideName}{generics}.{prop} => {prop};");
 							}
 						}
 					}
 					else if (member is IMethodSymbol method && method.MethodKind == MethodKind.Ordinary)
 					{
-						if (!method.HasAttribute(AttributeNamespace, "InputAttribute")
-							&& !method.HasAttribute(AttributeNamespace, "OutputAttribute"))
+						if (!method.HasAttribute(AttributeNamespace, UserSideAttributeName)
+							&& !method.HasAttribute(AttributeNamespace, AppSideAttributeName))
 						{
 							continue;
 						}
@@ -473,8 +477,8 @@ namespace MockGenerator
 					}
 					else if (member is IEventSymbol @event)
 					{
-						var isInput = @event.HasAttribute(AttributeNamespace, "InputAttribute");
-						var isOutput = @event.HasAttribute(AttributeNamespace, "OutputAttribute");
+						var isInput = @event.HasAttribute(AttributeNamespace, UserSideAttributeName);
+						var isOutput = @event.HasAttribute(AttributeNamespace, AppSideAttributeName);
 						if (!isInput && !isOutput)
 						{
 							continue;
