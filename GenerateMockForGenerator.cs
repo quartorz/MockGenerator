@@ -12,14 +12,16 @@ namespace MockGenerator
 	[Generator]
 	public class GenerateMockForGenerator : IIncrementalGenerator
 	{
+		const string AttributeNamespace = Utilities.AttributeNamespace;
+
 		public void Initialize(IncrementalGeneratorInitializationContext context)
 		{
 			context.RegisterPostInitializationOutput(static ctx =>
 			{
-				ctx.AddSource("GenerateMockForAttribute.cs", """
+				ctx.AddSource("GenerateMockForAttribute.cs", $$"""
 					using System;
 
-					namespace MockGenerator
+					namespace {{AttributeNamespace}}
 					{
 						[AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 						internal sealed class GenerateMockForAttribute : Attribute
@@ -32,17 +34,17 @@ namespace MockGenerator
 			});
 
 			var targets = context.SyntaxProvider.ForAttributeWithMetadataName(
-				"MockGenerator.GenerateMockForAttribute",
+				$"{AttributeNamespace}.GenerateMockForAttribute",
 				static (node, _) => true,
-				TransformTarget).WithTrackingName("MockGenerator.GenerateMockForGenerator");
+				TransformTarget).WithTrackingName($"{AttributeNamespace}.GenerateMockForGenerator");
 
 			// [GenerateInterface] produces interfaces in the same compilation, which are invisible to
 			// this generator's view. Collect them as value-equatable models so unresolved interface
 			// arguments of [GenerateMockFor] can be matched against them.
 			var interfaceModels = context.SyntaxProvider.ForAttributeWithMetadataName(
-				"MockGenerator.GenerateInterfaceAttribute",
+				$"{AttributeNamespace}.GenerateInterfaceAttribute",
 				static (node, _) => true,
-				TransformInterfaceModel).WithTrackingName("MockGenerator.GenerateMockForGenerator.Interfaces")
+				TransformInterfaceModel).WithTrackingName($"{AttributeNamespace}.GenerateMockForGenerator.Interfaces")
 				.Collect();
 
 			context.RegisterSourceOutput(targets.Combine(interfaceModels), static (spc, pair) =>

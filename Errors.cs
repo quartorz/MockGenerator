@@ -24,7 +24,7 @@ namespace MockGenerator
 			return new DiagnosticInfo(
 				id: "MockGen002",
 				title: "Source Generator Error",
-				messageFormat: "Field \"{0}\" (type: \"{1}\") must implement an interface with the \"InputAttribute\".",
+				messageFormat: $"Field \"{{0}}\" (type: \"{{1}}\") must implement an interface with the \"{Utilities.UserSideAttributeName}\".",
 				severity: DiagnosticSeverity.Error,
 				location: LocationInfo.From(field),
 				messageArgs: new[] { field.Name, field.Type.ToString() });
@@ -35,7 +35,7 @@ namespace MockGenerator
 			return new DiagnosticInfo(
 				id: "MockGen003",
 				title: "Source Generator Error",
-				messageFormat: "Field \"{0}\" (type: \"{1}\") must implement an interface with the \"OutputAttribute\".",
+				messageFormat: $"Field \"{{0}}\" (type: \"{{1}}\") must implement an interface with the \"{Utilities.AppSideAttributeName}\".",
 				severity: DiagnosticSeverity.Error,
 				location: LocationInfo.From(field),
 				messageArgs: new[] { field.Name, field.Type.ToString() });
@@ -46,7 +46,7 @@ namespace MockGenerator
 			return new DiagnosticInfo(
 				id: "MockGen004",
 				title: "Source Generator Error",
-				messageFormat: "Field \"{0}\" (type: \"{1}\") must implement an interface with the \"InputAttribute\" and \"OutputAttribute\".",
+				messageFormat: $"Field \"{{0}}\" (type: \"{{1}}\") must implement an interface with the \"{Utilities.UserSideAttributeName}\" and \"{Utilities.AppSideAttributeName}\".",
 				severity: DiagnosticSeverity.Error,
 				location: LocationInfo.From(field),
 				messageArgs: new[] { field.Name, field.Type.ToString() });
@@ -57,7 +57,7 @@ namespace MockGenerator
 			return new DiagnosticInfo(
 				id: "MockGen005",
 				title: "Source Generator Error",
-				messageFormat: "\"InputAttribute\" cannot be applied to a property setter (setter is implicitly Output).",
+				messageFormat: $"\"{Utilities.UserSideAttributeName}\" cannot be applied to a property setter (setter is implicitly {Utilities.AppSideName}).",
 				severity: DiagnosticSeverity.Error,
 				location: LocationInfo.From(setter),
 				messageArgs: Array.Empty<string>());
@@ -90,7 +90,7 @@ namespace MockGenerator
 			return new DiagnosticInfo(
 				id: "MockGen008",
 				title: "Source Generator Error",
-				messageFormat: "Field \"{0}\" (type: \"{1}\") implements {2} interfaces with \"InputAttribute\". Specify which one to use with [Input(As = typeof(IXxx))].",
+				messageFormat: $"Field \"{{0}}\" (type: \"{{1}}\") implements {{2}} interfaces with \"{Utilities.UserSideAttributeName}\". Specify which one to use with [{Utilities.UserSideName}(As = typeof(IXxx))].",
 				severity: DiagnosticSeverity.Error,
 				location: LocationInfo.From(field),
 				messageArgs: new[] { field.Name, field.Type.ToString(), matchCount.ToString() });
@@ -101,7 +101,7 @@ namespace MockGenerator
 			return new DiagnosticInfo(
 				id: "MockGen009",
 				title: "Source Generator Error",
-				messageFormat: "Field \"{0}\" (type: \"{1}\") implements {2} interfaces with \"OutputAttribute\". Specify which one to use with [Output(As = typeof(IXxx))].",
+				messageFormat: $"Field \"{{0}}\" (type: \"{{1}}\") implements {{2}} interfaces with \"{Utilities.AppSideAttributeName}\". Specify which one to use with [{Utilities.AppSideName}(As = typeof(IXxx))].",
 				severity: DiagnosticSeverity.Error,
 				location: LocationInfo.From(field),
 				messageArgs: new[] { field.Name, field.Type.ToString(), matchCount.ToString() });

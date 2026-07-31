@@ -9,14 +9,16 @@ namespace MockGenerator
 	[Generator]
 	public class GenerateInterfaceGenerator : IIncrementalGenerator
 	{
+		const string AttributeNamespace = Utilities.AttributeNamespace;
+
 		public void Initialize(IncrementalGeneratorInitializationContext context)
 		{
 			context.RegisterPostInitializationOutput(static ctx =>
 			{
-				ctx.AddSource("GenerateInterfaceAttribute.cs", """
+				ctx.AddSource("GenerateInterfaceAttribute.cs", $$"""
 					using System;
 
-					namespace MockGenerator
+					namespace {{AttributeNamespace}}
 					{
 						[AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 						internal sealed class GenerateInterfaceAttribute : Attribute
@@ -30,9 +32,9 @@ namespace MockGenerator
 			});
 
 			var src = context.SyntaxProvider.ForAttributeWithMetadataName(
-				"MockGenerator.GenerateInterfaceAttribute",
+				$"{AttributeNamespace}.GenerateInterfaceAttribute",
 				static (node, _) => true,
-				Transform).WithTrackingName("MockGenerator.GenerateInterfaceGenerator");
+				Transform).WithTrackingName($"{AttributeNamespace}.GenerateInterfaceGenerator");
 
 			context.RegisterSourceOutput(src, static (spc, source) =>
 			{
