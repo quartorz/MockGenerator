@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 
-namespace MockGenereator
+namespace MockGenerator
 {
 	[Generator]
 	public class GenerateInterfaceGenerator : IIncrementalGenerator
@@ -32,7 +32,7 @@ namespace MockGenereator
 			var src = context.SyntaxProvider.ForAttributeWithMetadataName(
 				"MockGenerator.GenerateInterfaceAttribute",
 				static (node, _) => true,
-				Transform).WithTrackingName("MockGenereator.GenerateInterfaceGenerator");
+				Transform).WithTrackingName("MockGenerator.GenerateInterfaceGenerator");
 
 			context.RegisterSourceOutput(src, static (spc, source) =>
 			{
