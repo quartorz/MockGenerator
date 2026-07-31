@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 
-namespace MockGenereator
+namespace MockGenerator
 {
 	internal static class StringBuilderHolder
 	{

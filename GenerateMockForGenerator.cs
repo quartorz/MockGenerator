@@ -2,11 +2,12 @@ using Microsoft.CodeAnalysis;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Text;
 using System.Threading;
 
 #nullable enable
 
-namespace MockGenereator
+namespace MockGenerator
 {
 	[Generator]
 	public class GenerateMockForGenerator : IIncrementalGenerator
@@ -33,7 +34,7 @@ namespace MockGenereator
 			var targets = context.SyntaxProvider.ForAttributeWithMetadataName(
 				"MockGenerator.GenerateMockForAttribute",
 				static (node, _) => true,
-				TransformTarget).WithTrackingName("MockGenereator.GenerateMockForGenerator");
+				TransformTarget).WithTrackingName("MockGenerator.GenerateMockForGenerator");
 
 			// [GenerateInterface] produces interfaces in the same compilation, which are invisible to
 			// this generator's view. Collect them as value-equatable models so unresolved interface
@@ -41,7 +42,7 @@ namespace MockGenereator
 			var interfaceModels = context.SyntaxProvider.ForAttributeWithMetadataName(
 				"MockGenerator.GenerateInterfaceAttribute",
 				static (node, _) => true,
-				TransformInterfaceModel).WithTrackingName("MockGenereator.GenerateMockForGenerator.Interfaces")
+				TransformInterfaceModel).WithTrackingName("MockGenerator.GenerateMockForGenerator.Interfaces")
 				.Collect();
 
 			context.RegisterSourceOutput(targets.Combine(interfaceModels), static (spc, pair) =>

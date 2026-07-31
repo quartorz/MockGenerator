@@ -4,30 +4,32 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 
-namespace MockGenereator
+namespace MockGenerator
 {
 	internal static class Utilities
 	{
+		public const string AttributeNamespace = "MockGenerator";
+
 		public static bool HasInputGetter(this IPropertySymbol p)
 		{
-			return p.GetMethod != null && p.GetMethod.HasAttribute("MockGenerator", "InputAttribute");
+			return p.GetMethod != null && p.GetMethod.HasAttribute(AttributeNamespace, "InputAttribute");
 		}
 
 		public static bool HasOutputGetter(this IPropertySymbol p)
 		{
-			return p.GetMethod != null && p.GetMethod.HasAttribute("MockGenerator", "OutputAttribute");
+			return p.GetMethod != null && p.GetMethod.HasAttribute(AttributeNamespace, "OutputAttribute");
 		}
 
 		public static bool IsTracked(this IPropertySymbol p)
 		{
 			return p.HasInputGetter() || p.HasOutputGetter()
-			|| (p.SetMethod != null && p.SetMethod.HasAttribute("MockGenerator", "OutputAttribute"));
+			|| (p.SetMethod != null && p.SetMethod.HasAttribute(AttributeNamespace, "OutputAttribute"));
 		}
 
 		public static string ResolveMockTypeName(this ITypeSymbol fieldType)
 		{
 			if (fieldType is INamedTypeSymbol named &&
-				named.HasAttribute("MockGenerator", "GenerateMockViewAttribute"))
+				named.HasAttribute(AttributeNamespace, "GenerateMockViewAttribute"))
 			{
 				var ns = named.ContainingNamespace.IsGlobalNamespace ? "" : named.ContainingNamespace + ".";
 				return $"MockView.{ns}Mock{named.Name}{named.TypeArguments.GenericArgs()}";
@@ -64,8 +66,8 @@ namespace MockGenereator
 					{
 						return new ResolveResult { Status = ResolveStatus.AsNotImplemented, AsTarget = asType };
 					}
-					bool hasInput = asType.HasAttribute("MockGenerator", "InputAttribute");
-					bool hasOutput = asType.HasAttribute("MockGenerator", "OutputAttribute");
+					bool hasInput = asType.HasAttribute(AttributeNamespace, "InputAttribute");
+					bool hasOutput = asType.HasAttribute(AttributeNamespace, "OutputAttribute");
 					if (input && !hasInput)
 					{
 						return new ResolveResult { Status = ResolveStatus.AsMissingAttribute, AsTarget = asType, RequiredAttribute = "InputAttribute" };
@@ -79,8 +81,8 @@ namespace MockGenereator
 			}
 
 			var matches = fieldType.AllInterfaces.Where(x =>
-				(!input || x.HasAttribute("MockGenerator", "InputAttribute")) &&
-				(!output || x.HasAttribute("MockGenerator", "OutputAttribute"))).ToList();
+				(!input || x.HasAttribute(AttributeNamespace, "InputAttribute")) &&
+				(!output || x.HasAttribute(AttributeNamespace, "OutputAttribute"))).ToList();
 
 			if (matches.Count > 1)
 			{
@@ -92,11 +94,11 @@ namespace MockGenereator
 			}
 
 			if (fieldType is INamedTypeSymbol named &&
-				named.HasAttribute("MockGenerator", "GenerateViewInterfacesAttribute"))
+				named.HasAttribute(AttributeNamespace, "GenerateViewInterfacesAttribute"))
 			{
-				var ns = named.ContainingNamespace.IsGlobalNamespace ? "" : named.ContainingNamespace + ".";
+				var ns = named.ContainingNamespace.IsGlobalNamespace ? "Generated." : named.ContainingNamespace + ".Generated.";
 				var suffix = (input && output) ? "" : (input ? "Input" : "Output");
-				return new ResolveResult { Status = ResolveStatus.Found, Name = $"MockView.{ns}I{named.Name}{suffix}{named.TypeArguments.GenericArgs()}" };
+				return new ResolveResult { Status = ResolveStatus.Found, Name = $"global::{ns}I{named.Name}{suffix}{named.TypeArguments.GenericArgs()}" };
 			}
 
 			return new ResolveResult { Status = ResolveStatus.NotFound };
@@ -108,7 +110,7 @@ namespace MockGenereator
 			{
 				var ac = attr.AttributeClass;
 				if (ac == null) continue;
-				if (ac.ContainingNamespace?.ToString() != "MockGenerator") continue;
+				if (ac.ContainingNamespace?.ToString() != AttributeNamespace) continue;
 				if (input && ac.MetadataName == "InputAttribute")
 				{
 					var v = FindNamedArg(attr, "As");
@@ -141,7 +143,7 @@ namespace MockGenereator
 			{
 				var ac = attr.AttributeClass;
 				if (ac == null) continue;
-				if (ac.ContainingNamespace?.ToString() != "MockGenerator") continue;
+				if (ac.ContainingNamespace?.ToString() != AttributeNamespace) continue;
 				if (ac.MetadataName != "InputAttribute" && ac.MetadataName != "OutputAttribute") continue;
 				if (FindNamedArg(attr, "As") != null) return true;
 			}
@@ -251,8 +253,8 @@ namespace MockGenereator
 
 		static bool IsAttributed(INamedTypeSymbol iface, bool input, bool output)
 		{
-			if (input && !iface.HasAttribute("MockGenerator", "InputAttribute")) return false;
-			if (output && !iface.HasAttribute("MockGenerator", "OutputAttribute")) return false;
+			if (input && !iface.HasAttribute(AttributeNamespace, "InputAttribute")) return false;
+			if (output && !iface.HasAttribute(AttributeNamespace, "OutputAttribute")) return false;
 			return input || output;
 		}
 
@@ -268,7 +270,7 @@ namespace MockGenereator
 
 		/// <summary>
 		/// Simple name of an interface, used as prefix in slot names (e.g., "IFoo_OnA").
-		/// Generic type arguments are intentionally omitted (see memory project_multi_interface_mock_design §"命名 mangling の限界").
+		/// Generic type arguments are intentionally omitted.
 		/// </summary>
 		public static string PrefixName(this INamedTypeSymbol iface) => iface.Name;
 
@@ -510,13 +512,14 @@ namespace MockGenereator
 				{
 					sb.Append(", ");
 				}
+				var mods = p.IsParams ? "params " : p.RefKind.RefKindModifier();
 				if (withDefaults && p.HasExplicitDefaultValue)
 				{
-					sb.Append($"{p.RefKind.RefKindModifier()}{p.Type.QualifiedName()} {p.Name} = {FormatDefault(p.ExplicitDefaultValue, p.Type)}");
+					sb.Append($"{mods}{p.Type.QualifiedName()} {p.Name} = {FormatDefault(p.ExplicitDefaultValue, p.Type)}");
 				}
 				else
 				{
-					sb.Append($"{p.RefKind.RefKindModifier()}{p.Type.QualifiedName()} {p.Name}");
+					sb.Append($"{mods}{p.Type.QualifiedName()} {p.Name}");
 				}
 			}
 			sb.Append(')');

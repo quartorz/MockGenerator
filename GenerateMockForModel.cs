@@ -6,7 +6,7 @@ using System.Text;
 
 #nullable enable
 
-namespace MockGenereator
+namespace MockGenerator
 {
 	internal enum MemberKind
 	{
@@ -498,7 +498,7 @@ namespace MockGenereator
 							var args = m.MethodArgs();
 							// Explicit interface implementations must NOT restate generic constraints (CS0460).
 							var text = $"\n{ret} {target}.{m.Name}{g}{prmsNoDef} => {asCall}.{m.Name}{g}{args};";
-							result.Add(new MemberFragment(MemberKind.Raw, "GMX:" + target + "." + m.Name + g + m.MethodParamTypes(), text));
+							result.Add(new MemberFragment(MemberKind.Raw, "GMX:" + target + "." + m.Name + g + prmsNoDef, text));
 							break;
 						}
 					}
