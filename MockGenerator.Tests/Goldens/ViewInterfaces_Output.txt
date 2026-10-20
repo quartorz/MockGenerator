@@ -1,0 +1,11 @@
+namespace Sample.Generated
+{
+	/// <summary>
+	/// <see cref="global::Sample.Panel"/>
+	/// </summary>
+	[MockGenerator.Output]
+	public interface IPanelOutput
+	{
+		void Show(global::System.Int32 value);
+	}
+}

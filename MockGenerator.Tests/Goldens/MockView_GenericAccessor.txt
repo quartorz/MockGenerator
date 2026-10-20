@@ -1,0 +1,33 @@
+namespace MockView.Sample
+{
+	/// <summary>
+	/// <see cref="global::Sample.Panel"/>
+	/// </summary>
+	public partial class MockPanel : global::Sample.IList<global::System.Int32>, global::Sample.IList<global::System.String>
+	{
+		public sealed class IListAccessor<T>
+		{
+			public event global::System.Action<T> OnChanged;
+			public void RaiseOnChanged(T obj) => OnChanged?.Invoke(obj);
+			public delegate void SetDelegate(T value);
+			public SetDelegate SetFunc { get; set; }
+			public void Set(T value) => SetFunc?.Invoke(value);
+		}
+		private readonly System.Collections.Generic.Dictionary<System.Type, object> _iListAccessorMap = new System.Collections.Generic.Dictionary<System.Type, object>();
+		public IListAccessor<T> AsIList<T>()
+		{
+			if (typeof(IListAccessor<T>) != typeof(IListAccessor<global::System.Int32>) && typeof(IListAccessor<T>) != typeof(IListAccessor<global::System.String>))
+				throw new System.InvalidOperationException("This mock does not implement IList for type argument " + typeof(IListAccessor<T>) + ".");
+			if (!_iListAccessorMap.TryGetValue(typeof(IListAccessor<T>), out var __a))
+			{
+				__a = new IListAccessor<T>();
+				_iListAccessorMap[typeof(IListAccessor<T>)] = __a;
+			}
+			return (IListAccessor<T>)__a;
+		}
+		public void Set(global::System.Int32 value) => AsIList<global::System.Int32>().Set(value);
+		public event global::System.Action<global::System.Int32> OnChanged { add => AsIList<global::System.Int32>().OnChanged += value; remove => AsIList<global::System.Int32>().OnChanged -= value; }
+		public void Set(global::System.String value) => AsIList<global::System.String>().Set(value);
+		event global::System.Action<global::System.String> global::Sample.IList<global::System.String>.OnChanged { add => AsIList<global::System.String>().OnChanged += value; remove => AsIList<global::System.String>().OnChanged -= value; }
+	}
+}

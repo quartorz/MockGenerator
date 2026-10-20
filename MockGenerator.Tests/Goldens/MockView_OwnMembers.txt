@@ -1,0 +1,14 @@
+namespace MockView.Sample
+{
+	/// <summary>
+	/// <see cref="global::Sample.Panel"/>
+	/// </summary>
+	public partial class MockPanel
+	{
+		public event global::System.Action OnClick;
+		public void RaiseOnClick() => OnClick?.Invoke();
+		public delegate void ShowDelegate(global::System.Int32 value);
+		public ShowDelegate ShowFunc { get; set; }
+		public void Show(global::System.Int32 value) => ShowFunc?.Invoke(value);
+	}
+}

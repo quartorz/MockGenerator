@@ -1,0 +1,11 @@
+namespace Sample.Generated
+{
+	/// <summary>
+	/// <see cref="global::Sample.Panel"/>
+	/// </summary>
+	[MockGenerator.Input]
+	public interface IPanelInput
+	{
+		event global::System.Action OnClick;
+	}
+}

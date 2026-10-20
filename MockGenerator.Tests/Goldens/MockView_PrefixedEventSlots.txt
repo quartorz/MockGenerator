@@ -1,0 +1,15 @@
+namespace MockView.Sample
+{
+	/// <summary>
+	/// <see cref="global::Sample.Panel"/>
+	/// </summary>
+	public partial class MockPanel : global::Sample.IDialog, global::Sample.ISheet
+	{
+		public event global::System.Action IDialog_OnClick;
+		public void IDialog_RaiseOnClick() => IDialog_OnClick?.Invoke();
+		event global::System.Action global::Sample.IDialog.OnClick { add => IDialog_OnClick += value; remove => IDialog_OnClick -= value; }
+		public event global::System.Action ISheet_OnClick;
+		public void ISheet_RaiseOnClick() => ISheet_OnClick?.Invoke();
+		event global::System.Action global::Sample.ISheet.OnClick { add => ISheet_OnClick += value; remove => ISheet_OnClick -= value; }
+	}
+}

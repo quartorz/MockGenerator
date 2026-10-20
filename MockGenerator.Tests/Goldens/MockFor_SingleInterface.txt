@@ -1,0 +1,14 @@
+namespace Sample
+{
+	partial class MockSession : global::Sample.ISession
+	{
+		public System.Action<global::System.String> OnNameSet { get; set; }
+		private global::System.String _nameBacking;
+		public global::System.String Name { get => _nameBacking; set { _nameBacking = value; OnNameSet?.Invoke(value); } }
+		public event global::System.Action OnClosed;
+		public void RaiseOnClosed() => OnClosed?.Invoke();
+		public delegate global::System.Int32 CountDelegate(global::System.String key);
+		public CountDelegate CountFunc { get; set; }
+		public global::System.Int32 Count(global::System.String key) => CountFunc != null ? CountFunc.Invoke(key) : default(global::System.Int32);
+	}
+}

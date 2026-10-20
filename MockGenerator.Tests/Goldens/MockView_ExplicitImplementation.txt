@@ -1,0 +1,12 @@
+namespace MockView.Sample
+{
+	/// <summary>
+	/// <see cref="global::Sample.Panel"/>
+	/// </summary>
+	public partial class MockPanel : global::Sample.IDialog
+	{
+		public event global::System.Action IDialog_OnClick;
+		public void IDialog_RaiseOnClick() => IDialog_OnClick?.Invoke();
+		event global::System.Action global::Sample.IDialog.OnClick { add => IDialog_OnClick += value; remove => IDialog_OnClick -= value; }
+	}
+}
