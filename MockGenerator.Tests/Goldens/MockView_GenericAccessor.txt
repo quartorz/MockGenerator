@@ -1,3 +1,5 @@
+#nullable enable
+
 namespace MockView.Sample
 {
 	/// <summary>
@@ -7,10 +9,10 @@ namespace MockView.Sample
 	{
 		public sealed class IListAccessor<T>
 		{
-			public event global::System.Action<T> OnChanged;
+			public event global::System.Action<T>? OnChanged;
 			public void RaiseOnChanged(T obj) => OnChanged?.Invoke(obj);
 			public delegate void SetDelegate(T value);
-			public SetDelegate SetFunc { get; set; }
+			public SetDelegate? SetFunc { get; set; }
 			public void Set(T value) => SetFunc?.Invoke(value);
 		}
 		private readonly System.Collections.Generic.Dictionary<System.Type, object> _iListAccessorMap = new System.Collections.Generic.Dictionary<System.Type, object>();

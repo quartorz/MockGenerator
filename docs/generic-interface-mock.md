@@ -218,3 +218,4 @@ m.IB_FooFunc = () => "x";
 - 非ジェネリック interface・複数ソースの prefix 規約は別途（従来どおり）。
 - setter の `On{Name}Set` Action / backing 規約は通常の Mock 生成と共通です。
 - イベント発火ヘルパは `Raise` + イベント名の先頭大文字化（`onClick` → `RaiseOnClick`）。
+  prefix 付きスロットでは prefix を先頭に置く（`IA_` + `OnClick` → `IA_RaiseOnClick`）。

@@ -1,0 +1,16 @@
+#nullable enable
+
+namespace Sample
+{
+	partial class MockSession : global::Sample.ISession
+	{
+		public System.Action<global::System.String>? OnNameSet { get; set; }
+		private global::System.String _nameBacking = default!;
+		public global::System.String Name { get => _nameBacking; set { _nameBacking = value; OnNameSet?.Invoke(value); } }
+		public event global::System.Action? OnChanged;
+		public void RaiseOnChanged() => OnChanged?.Invoke();
+		public delegate void SetDelegate(global::System.String v);
+		public SetDelegate? SetFunc { get; set; }
+		public void Set(global::System.String v) => SetFunc?.Invoke(v);
+	}
+}

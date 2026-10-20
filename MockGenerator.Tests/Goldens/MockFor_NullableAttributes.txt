@@ -1,0 +1,45 @@
+#nullable enable
+
+namespace Sample
+{
+	partial class MockSession : global::Sample.ISession
+	{
+		public System.Action<global::System.String?>? OnNameSet { get; set; }
+		[global::System.Diagnostics.CodeAnalysis.AllowNull] private global::System.String _nameBacking = default!;
+		[global::System.Diagnostics.CodeAnalysis.AllowNull] public global::System.String Name { get => _nameBacking; set { _nameBacking = value; OnNameSet?.Invoke(value); } }
+		public System.Action<global::System.String>? OnLabelSet { get; set; }
+		[global::System.Diagnostics.CodeAnalysis.MaybeNull] private global::System.String _labelBacking = default!;
+		[global::System.Diagnostics.CodeAnalysis.MaybeNull] public global::System.String Label { get => _labelBacking; set { _labelBacking = value; OnLabelSet?.Invoke(value); } }
+		public System.Action<global::System.String?>? OnCacheSet { get; set; }
+		[global::System.Diagnostics.CodeAnalysis.NotNull] private global::System.String? _cacheBacking = default!;
+		[global::System.Diagnostics.CodeAnalysis.NotNull] public global::System.String? Cache { get => _cacheBacking; set { _cacheBacking = value; OnCacheSet?.Invoke(value); } }
+		public System.Action<global::System.String?>? OnTagSet { get; set; }
+		[global::System.Diagnostics.CodeAnalysis.DisallowNull] private global::System.String? _tagBacking;
+		[global::System.Diagnostics.CodeAnalysis.DisallowNull] public global::System.String? Tag { get => _tagBacking; set { _tagBacking = value; OnTagSet?.Invoke(value); } }
+		public delegate global::System.Boolean TryFindDelegate(global::System.String key, [global::System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out global::System.String? value);
+		public TryFindDelegate? TryFindFunc { get; set; }
+		public global::System.Boolean TryFind(global::System.String key, [global::System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out global::System.String? value)
+		{
+			if (TryFindFunc != null) return TryFindFunc.Invoke(key, out value);
+			value = default;
+			return default(global::System.Boolean);
+		}
+		[return: global::System.Diagnostics.CodeAnalysis.NotNullIfNotNull("fallback")] public delegate global::System.String? ResolveDelegate(global::System.String? fallback);
+		public ResolveDelegate? ResolveFunc { get; set; }
+		[return: global::System.Diagnostics.CodeAnalysis.NotNullIfNotNull("fallback")] public global::System.String? Resolve(global::System.String? fallback) => ResolveFunc != null ? ResolveFunc.Invoke(fallback) : default(global::System.String?);
+		[return: global::System.Diagnostics.CodeAnalysis.MaybeNull] public delegate global::System.String PeekDelegate();
+		public PeekDelegate? PeekFunc { get; set; }
+		[return: global::System.Diagnostics.CodeAnalysis.MaybeNull] public global::System.String Peek() => PeekFunc != null ? PeekFunc.Invoke() : default(global::System.String);
+		public delegate void PutDelegate([global::System.Diagnostics.CodeAnalysis.DisallowNull] global::System.String? item);
+		public PutDelegate? PutFunc { get; set; }
+		public void Put([global::System.Diagnostics.CodeAnalysis.DisallowNull] global::System.String? item) => PutFunc?.Invoke(item);
+		public delegate global::System.Boolean FillDelegate([global::System.Diagnostics.CodeAnalysis.AllowNull] global::System.String first, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out global::System.String second);
+		public FillDelegate? FillFunc { get; set; }
+		public global::System.Boolean Fill([global::System.Diagnostics.CodeAnalysis.AllowNull] global::System.String first, [global::System.Diagnostics.CodeAnalysis.MaybeNullWhen(false)] out global::System.String second)
+		{
+			if (FillFunc != null) return FillFunc.Invoke(first, out second);
+			second = default!;
+			return default(global::System.Boolean);
+		}
+	}
+}

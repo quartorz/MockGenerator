@@ -1,0 +1,14 @@
+#nullable enable
+
+namespace MockView.Sample
+{
+	/// <summary>
+	/// <see cref="global::Sample.Panel"/>
+	/// </summary>
+	public partial class MockPanel : global::Sample.ISession
+	{
+		public delegate void SetDelegate(global::System.String? v);
+		public SetDelegate? SetFunc { get; set; }
+		public void Set(global::System.String? v) => SetFunc?.Invoke(v);
+	}
+}

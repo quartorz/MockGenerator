@@ -1,0 +1,10 @@
+#nullable enable
+
+namespace Sample
+{
+	public partial class Panel :
+		global::Sample.Generated.IPanel
+	{
+		public global::Sample.Generated.IChildOutput? child => _child;
+	}
+}

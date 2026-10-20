@@ -1,0 +1,37 @@
+#nullable enable
+
+namespace Sample
+{
+	partial class MockSession : global::Sample.ISession
+	{
+		public sealed class IStoreAccessor<TKey>
+		{
+			public interface IFindDelegate
+			{
+				TValue? Call<TValue>(TKey key);
+			}
+			public IFindDelegate? FindFunc { get; set; }
+			public TValue? Find<TValue>(TKey key) => FindFunc != null ? FindFunc.Call<TValue>(key) : default(TValue?);
+			public interface IPutDelegate
+			{
+				void Call<TValue>(TKey key, TValue? value);
+			}
+			public IPutDelegate? PutFunc { get; set; }
+			public void Put<TValue>(TKey key, TValue? value) => PutFunc?.Call<TValue>(key, value);
+		}
+		private readonly System.Collections.Generic.Dictionary<System.Type, object> _iStoreAccessorMap = new System.Collections.Generic.Dictionary<System.Type, object>();
+		public IStoreAccessor<TKey> AsIStore<TKey>()
+		{
+			if (typeof(IStoreAccessor<TKey>) != typeof(IStoreAccessor<global::System.Int32>))
+				throw new System.InvalidOperationException("This mock does not implement IStore for type argument " + typeof(IStoreAccessor<TKey>) + ".");
+			if (!_iStoreAccessorMap.TryGetValue(typeof(IStoreAccessor<TKey>), out var __a))
+			{
+				__a = new IStoreAccessor<TKey>();
+				_iStoreAccessorMap[typeof(IStoreAccessor<TKey>)] = __a;
+			}
+			return (IStoreAccessor<TKey>)__a;
+		}
+		TValue? global::Sample.IStore<global::System.Int32>.Find<TValue>(global::System.Int32 key) where TValue : default => AsIStore<global::System.Int32>().Find<TValue>(key);
+		void global::Sample.IStore<global::System.Int32>.Put<TValue>(global::System.Int32 key, TValue? value) where TValue : default => AsIStore<global::System.Int32>().Put<TValue>(key, value);
+	}
+}

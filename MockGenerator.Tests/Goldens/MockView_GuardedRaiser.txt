@@ -1,3 +1,5 @@
+#nullable enable
+
 namespace MockView.Sample
 {
 	/// <summary>
@@ -5,14 +7,14 @@ namespace MockView.Sample
 	/// </summary>
 	public partial class MockPanel
 	{
-		public event global::Sample.TryPick OnPick;
+		public event global::Sample.TryPick? OnPick;
 		public global::System.Boolean RaiseOnPick(global::System.Int32 index, out global::System.String picked)
 		{
 			if (OnPick != null) return OnPick.Invoke(index, out picked);
-			picked = default;
+			picked = default!;
 			return default(global::System.Boolean);
 		}
-		public event global::System.Func<global::System.Int32> OnCount;
+		public event global::System.Func<global::System.Int32>? OnCount;
 		public global::System.Int32 RaiseOnCount() => OnCount != null ? OnCount.Invoke() : default(global::System.Int32);
 	}
 }

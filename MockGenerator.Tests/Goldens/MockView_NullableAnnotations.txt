@@ -1,0 +1,41 @@
+#nullable enable
+
+namespace MockView.Sample
+{
+	/// <summary>
+	/// <see cref="global::Sample.Panel"/>
+	/// </summary>
+	public partial class MockPanel : global::Sample.IDialog
+	{
+		public event global::System.Func<global::System.String>? OnQuery;
+		public global::System.String RaiseOnQuery() => OnQuery != null ? OnQuery.Invoke() : default(global::System.String)!;
+		public System.Action<global::System.String?>? OnTitleSet { get; set; }
+		private global::System.String? _titleBacking;
+		public global::System.String? Title { get => _titleBacking; set { _titleBacking = value; OnTitleSet?.Invoke(value); } }
+		public System.Action<global::System.String>? OnLabelSet { get; set; }
+		private global::System.String _labelBacking = default!;
+		public global::System.String Label { get => _labelBacking; set { _labelBacking = value; OnLabelSet?.Invoke(value); } }
+		public interface IPickDelegate
+		{
+			T? Call<T>(T? seed) where T : class?;
+		}
+		public IPickDelegate? PickFunc { get; set; }
+		public T? Pick<T>(T? seed) where T : class? => PickFunc != null ? PickFunc.Call<T>(seed) : default(T?);
+		public delegate global::System.String DescribeDelegate(global::System.String[] parts, global::System.String?[] optional);
+		public DescribeDelegate? DescribeFunc { get; set; }
+		public global::System.String Describe(global::System.String[] parts, global::System.String?[] optional) => DescribeFunc != null ? DescribeFunc.Invoke(parts, optional) : default(global::System.String)!;
+		public delegate global::System.Boolean TryGetDelegate(global::System.Int32 index, out global::System.String value);
+		public TryGetDelegate? TryGetFunc { get; set; }
+		public global::System.Boolean TryGet(global::System.Int32 index, out global::System.String value)
+		{
+			if (TryGetFunc != null) return TryGetFunc.Invoke(index, out value);
+			value = default!;
+			return default(global::System.Boolean);
+		}
+		public event global::System.Action<global::System.String?>? OnClosed;
+		public void RaiseOnClosed(global::System.String? obj) => OnClosed?.Invoke(obj);
+		public delegate global::System.String? FindDelegate(global::System.String? key, global::System.String? fallback);
+		public FindDelegate? FindFunc { get; set; }
+		public global::System.String? Find(global::System.String? key, global::System.String? fallback = null) => FindFunc != null ? FindFunc.Invoke(key, fallback) : default(global::System.String?);
+	}
+}

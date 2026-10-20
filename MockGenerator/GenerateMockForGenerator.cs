@@ -19,6 +19,7 @@ namespace MockGenerator
 			context.RegisterPostInitializationOutput(static ctx =>
 			{
 				ctx.AddSource("GenerateMockForAttribute.cs", $$"""
+					#nullable enable
 					using System;
 
 					namespace {{AttributeNamespace}}
@@ -151,6 +152,7 @@ namespace MockGenerator
 			if (baseNames.Count == 0) return;
 
 			using var _ = StringBuilderHolder.Get(out var sb);
+			sb.AppendGeneratedHeader();
 
 			var indent = target.Namespace != null ? "\t" : "";
 			var memberIndent = indent + "\t";

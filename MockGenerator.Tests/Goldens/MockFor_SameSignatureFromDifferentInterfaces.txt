@@ -1,0 +1,26 @@
+#nullable enable
+
+namespace Sample
+{
+	partial class MockSession : global::Sample.ISession
+	{
+		public global::System.String IA_Name { get; set; } = default!;
+		global::System.String global::Sample.IA.Name => IA_Name;
+		public global::System.String IB_Name { get; set; } = default!;
+		global::System.String global::Sample.IB.Name => IB_Name;
+		public event global::System.Action? IA_OnChanged;
+		public void IA_RaiseOnChanged() => IA_OnChanged?.Invoke();
+		event global::System.Action global::Sample.IA.OnChanged { add => IA_OnChanged += value; remove => IA_OnChanged -= value; }
+		public event global::System.Action? IB_OnChanged;
+		public void IB_RaiseOnChanged() => IB_OnChanged?.Invoke();
+		event global::System.Action global::Sample.IB.OnChanged { add => IB_OnChanged += value; remove => IB_OnChanged -= value; }
+		public delegate void IA_SetDelegate(global::System.String v);
+		public IA_SetDelegate? IA_SetFunc { get; set; }
+		public void IA_Set(global::System.String v) => IA_SetFunc?.Invoke(v);
+		void global::Sample.IA.Set(global::System.String v) => IA_Set(v);
+		public delegate void IB_SetDelegate(global::System.String v);
+		public IB_SetDelegate? IB_SetFunc { get; set; }
+		public void IB_Set(global::System.String v) => IB_SetFunc?.Invoke(v);
+		void global::Sample.IB.Set(global::System.String v) => IB_Set(v);
+	}
+}

@@ -1,11 +1,13 @@
+#nullable enable
+
 namespace Sample
 {
 	partial class MockSession : global::Sample.ISession
 	{
-		public event global::System.Action<global::System.Int32> IUpper_OnChanged;
+		public event global::System.Action<global::System.Int32>? IUpper_OnChanged;
 		public void IUpper_RaiseOnChanged(global::System.Int32 obj) => IUpper_OnChanged?.Invoke(obj);
 		event global::System.Action<global::System.Int32> global::Sample.IUpper.OnChanged { add => IUpper_OnChanged += value; remove => IUpper_OnChanged -= value; }
-		public event global::System.Action<global::System.String> ILower_OnChanged;
+		public event global::System.Action<global::System.String>? ILower_OnChanged;
 		public void ILower_RaiseOnChanged(global::System.String obj) => ILower_OnChanged?.Invoke(obj);
 		event global::System.Action<global::System.String> global::Sample.ILower.OnChanged { add => ILower_OnChanged += value; remove => ILower_OnChanged -= value; }
 	}

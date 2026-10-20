@@ -1,0 +1,22 @@
+#nullable enable
+
+namespace Sample
+{
+	/// <summary>
+	/// <see cref="global::Sample.Session"/>
+	/// </summary>
+	public interface ISession
+	{
+		[global::System.Diagnostics.CodeAnalysis.AllowNull] global::System.String Name { get; set; }
+		global::System.String? Title { get; set; }
+		event global::System.Action<global::System.String?>? OnClosed;
+		global::System.String? Find(global::System.String? key, global::System.String? fallback = null);
+		T? Pick<T>(T? seed) where T : class?;
+		global::System.Boolean TryGet(global::System.Int32 index, [global::System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out global::System.String? value);
+		[return: global::System.Diagnostics.CodeAnalysis.MaybeNull] global::System.String Peek();
+	}
+
+	partial class Session : Sample.ISession
+	{
+	}
+}

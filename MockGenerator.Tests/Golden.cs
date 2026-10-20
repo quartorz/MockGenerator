@@ -8,13 +8,14 @@ namespace MockGenerator.Tests;
 /// Full-text comparison of generated output against a checked-in file under <c>Goldens/</c>.
 /// <para>
 /// Set the environment variable <c>UPDATE_GOLDENS=1</c> to write the actual output to the golden file
-/// instead of comparing. The run then fails, so an accidental update never passes silently — review the
-/// rewritten files in <c>git diff</c> and run again without the variable.
+/// instead of comparing. The call then fails, so an accidental update never passes silently — review the
+/// rewritten files in <c>git diff</c> and run again without the variable. A test that compares several
+/// goldens rewrites one per run.
 /// </para>
 /// </summary>
 internal static class Golden
 {
-	static bool Updating => Environment.GetEnvironmentVariable("UPDATE_GOLDENS") == "1";
+	internal static bool Updating => Environment.GetEnvironmentVariable("UPDATE_GOLDENS") == "1";
 
 	/// <summary>Asserts that <paramref name="actual"/> equals the golden named <paramref name="name"/> (without extension).</summary>
 	public static void Equal(string name, string actual)
@@ -46,5 +47,17 @@ internal static class Golden
 		var goldens = Path.Combine(dir.FullName, "Goldens");
 		System.IO.Directory.CreateDirectory(goldens);
 		return goldens;
+	}
+}
+
+/// <summary>
+/// Fails while <c>UPDATE_GOLDENS=1</c> is set, so a full run notices the variable even when no golden test ran.
+/// </summary>
+public class GoldenGuard
+{
+	[Fact]
+	public void UpdateGoldensIsNotSet()
+	{
+		Assert.False(Golden.Updating, "Goldens were rewritten (UPDATE_GOLDENS=1). Review them in git diff and run again without the variable.");
 	}
 }

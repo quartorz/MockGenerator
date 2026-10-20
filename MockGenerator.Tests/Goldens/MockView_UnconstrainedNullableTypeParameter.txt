@@ -1,0 +1,25 @@
+#nullable enable
+
+namespace MockView.Sample
+{
+	/// <summary>
+	/// <see cref="global::Sample.Panel"/>
+	/// </summary>
+	public partial class MockPanel : global::Sample.IFinder, global::Sample.IPutter
+	{
+		public interface IIFinder_FindDelegate
+		{
+			TValue? Call<TValue>(global::System.String key);
+		}
+		public IIFinder_FindDelegate? IFinder_FindFunc { get; set; }
+		public TValue? IFinder_Find<TValue>(global::System.String key) => IFinder_FindFunc != null ? IFinder_FindFunc.Call<TValue>(key) : default(TValue?);
+		TValue? global::Sample.IFinder.Find<TValue>(global::System.String key) where TValue : default => IFinder_Find<TValue>(key);
+		public interface IIPutter_PutDelegate
+		{
+			void Call<TValue>(TValue? value);
+		}
+		public IIPutter_PutDelegate? IPutter_PutFunc { get; set; }
+		public void IPutter_Put<TValue>(TValue? value) => IPutter_PutFunc?.Call<TValue>(value);
+		void global::Sample.IPutter.Put<TValue>(TValue? value) where TValue : default => IPutter_Put<TValue>(value);
+	}
+}

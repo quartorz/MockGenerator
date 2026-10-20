@@ -16,6 +16,7 @@ namespace MockGenerator
 			context.RegisterPostInitializationOutput(static ctx =>
 			{
 				ctx.AddSource("GenerateInterfaceAttribute.cs", $$"""
+					#nullable enable
 					using System;
 
 					namespace {{AttributeNamespace}}
@@ -25,7 +26,7 @@ namespace MockGenerator
 						{
 							public GenerateInterfaceAttribute() { }
 							public GenerateInterfaceAttribute(string name) { Name = name; }
-							public string Name { get; }
+							public string? Name { get; }
 						}
 					}
 					""");
@@ -75,6 +76,7 @@ namespace MockGenerator
 			}
 
 			using var _ = StringBuilderHolder.Get(out var sb);
+			sb.AppendGeneratedHeader();
 
 			var indent = ns != null ? "\t" : "";
 			var memberIndent = indent + "\t";
@@ -115,7 +117,7 @@ namespace MockGenerator
 						var setterPublic = p.SetMethod != null && p.SetMethod.DeclaredAccessibility == Accessibility.Public;
 						if (!getterPublic && !setterPublic) break;
 						var accessors = (getterPublic ? "get; " : "") + (setterPublic ? "set; " : "");
-						sb.Append($"\n{memberIndent}{p.Type.QualifiedName()} {p.Name} {{ {accessors}}}");
+						sb.Append($"\n{memberIndent}{p.NullableAttributes()}{p.Type.QualifiedName()} {p.Name} {{ {accessors}}}");
 						break;
 					}
 					case IMethodSymbol m when m.MethodKind == MethodKind.Ordinary:
@@ -123,7 +125,7 @@ namespace MockGenerator
 						if (m.OverriddenMethod?.ContainingType?.SpecialType == SpecialType.System_Object) break;
 						var mGenerics = m.TypeParameters.GenericsParams();
 						var mConstraints = m.TypeParameters.GenericsConstraints();
-						sb.Append($"\n{memberIndent}{m.ReturnTypeName()} {m.Name}{mGenerics}{m.MethodParams(withDefaults: true)}{mConstraints};");
+						sb.Append($"\n{memberIndent}{m.ReturnNullableAttributes()}{m.ReturnTypeName()} {m.Name}{mGenerics}{m.MethodParams(withDefaults: true)}{mConstraints};");
 						break;
 					}
 					case IEventSymbol e:

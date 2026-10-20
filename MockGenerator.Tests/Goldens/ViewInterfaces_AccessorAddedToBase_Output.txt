@@ -1,0 +1,13 @@
+#nullable enable
+
+namespace Sample.Generated
+{
+	/// <summary>
+	/// <see cref="global::Sample.Panel"/>
+	/// </summary>
+	[MockGenerator.Output]
+	public interface IPanelOutput : global::Sample.IHasText
+	{
+		new global::System.String Text { get; set; }
+	}
+}

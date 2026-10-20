@@ -1,0 +1,19 @@
+#nullable enable
+
+namespace MockView.Sample
+{
+	/// <summary>
+	/// <see cref="global::Sample.Panel"/>
+	/// </summary>
+	public partial class MockPanel : global::Sample.ISession
+	{
+		public delegate void IA_SetDelegate(global::System.String v);
+		public IA_SetDelegate? IA_SetFunc { get; set; }
+		public void IA_Set(global::System.String v) => IA_SetFunc?.Invoke(v);
+		void global::Sample.IA.Set(global::System.String v) => IA_Set(v);
+		public delegate void IB_SetDelegate(global::System.String? v);
+		public IB_SetDelegate? IB_SetFunc { get; set; }
+		public void IB_Set(global::System.String? v) => IB_SetFunc?.Invoke(v);
+		void global::Sample.IB.Set(global::System.String? v) => IB_Set(v);
+	}
+}

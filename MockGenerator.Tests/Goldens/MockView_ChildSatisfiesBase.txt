@@ -1,0 +1,13 @@
+#nullable enable
+
+namespace MockView.Sample
+{
+	/// <summary>
+	/// <see cref="global::Sample.Panel"/>
+	/// </summary>
+	public partial class MockPanel : global::Sample.Generated.IPanel
+	{
+		public MockView.Sample.MockChild child { get; set; } = new MockView.Sample.MockChild();
+		global::Sample.Generated.IChildOutput global::Sample.IHasChild.child => child;
+	}
+}

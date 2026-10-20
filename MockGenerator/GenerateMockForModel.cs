@@ -300,17 +300,17 @@ namespace MockGenerator
 		}
 
 		/// <summary>
-		/// Emits properties gathered from a root interface and its bases. Same-named properties of the same
-		/// type collapse to one implicit public member; same-named properties of <em>different</em> types
-		/// (a conflicting diamond) become per-interface explicit interface implementations, since one public
-		/// member cannot satisfy both.
+		/// Emits properties gathered from a root interface and its bases. Same-named properties declared by
+		/// different interfaces become per-interface explicit interface implementations, each behind a prefixed
+		/// slot, regardless of their types; the same member reached through several inheritance paths is
+		/// emitted once.
 		/// </summary>
 		static void EmitProperties(List<MemberFragment> result, List<IPropertySymbol> props)
 		{
 			foreach (var byName in props.GroupBy(p => p.Name))
 			{
 				var list = byName.ToList();
-				var conflict = list.Select(p => p.Type.QualifiedName()).Distinct().Count() > 1;
+				var conflict = list.Select(p => p.OriginalDefinition).Distinct(SymbolEqualityComparer.Default).Count() > 1;
 				if (!conflict)
 				{
 					using var _ = StringBuilderHolder.Get(out var sb);
@@ -335,15 +335,16 @@ namespace MockGenerator
 
 		/// <summary>
 		/// Emits events gathered from a root interface and its bases. Mirrors <see cref="EmitProperties"/>:
-		/// same-named events of the same delegate type collapse to one implicit public event; differing
-		/// types become per-interface explicit interface implementations.
+		/// same-named events declared by different interfaces become per-interface explicit interface
+		/// implementations, each behind a prefixed slot, regardless of their types; the same member reached
+		/// through several inheritance paths is emitted once.
 		/// </summary>
 		static void EmitEvents(List<MemberFragment> result, List<IEventSymbol> events)
 		{
 			foreach (var byName in events.GroupBy(e => e.Name))
 			{
 				var list = byName.ToList();
-				var conflict = list.Select(e => e.Type.QualifiedName()).Distinct().Count() > 1;
+				var conflict = list.Select(e => e.OriginalDefinition).Distinct(SymbolEqualityComparer.Default).Count() > 1;
 				if (!conflict)
 				{
 					using var _ = StringBuilderHolder.Get(out var sb);
@@ -368,9 +369,10 @@ namespace MockGenerator
 
 		/// <summary>
 		/// Emits methods gathered from a root interface and its bases. Overloads (same name, different
-		/// parameters) merge into one public group as usual. The one case a public member cannot express —
-		/// same name and parameters but a <em>different return type</em> across interfaces — is emitted as
-		/// per-interface explicit interface implementations instead.
+		/// parameters) merge into one public group as usual. A signature declared by more than one interface
+		/// is emitted as per-interface explicit interface implementations behind prefixed slots, so each
+		/// interface's contract keeps its own slot; the same member reached through several inheritance paths
+		/// is emitted once.
 		/// </summary>
 		static void EmitMethods(List<MemberFragment> result, List<IMethodSymbol> ordinaryMethods)
 		{
@@ -379,7 +381,7 @@ namespace MockGenerator
 			var conflictSigs = new HashSet<string>();
 			foreach (var bySig in ordinaryMethods.GroupBy(Sig))
 			{
-				if (bySig.Select(m => m.ReturnTypeName()).Distinct().Count() > 1) conflictSigs.Add(bySig.Key);
+				if (bySig.Select(m => m.OriginalDefinition).Distinct(SymbolEqualityComparer.Default).Count() > 1) conflictSigs.Add(bySig.Key);
 			}
 
 			var methods = new Utilities.MethodGroups();
@@ -395,7 +397,7 @@ namespace MockGenerator
 				var key = "GMX:" + ifaceQ + "." + m.Name + m.TypeParameters.GenericsParams() + m.MethodParamTypes();
 				if (!seenExplicit.Add(key)) continue;
 				using var _ = StringBuilderHolder.Get(out var sb);
-				sb.EmitMockMethodGroup("", m.ContainingType.Name + "_" + m.Name, new[] { m }, ifaceQ);
+				sb.EmitMockMethodGroup("", m.ContainingType.Name + "_" + m.Name, new[] { new Utilities.Overload { Member = m } }, ifaceQ);
 				result.Add(new MemberFragment(MemberKind.Raw, key, sb.ToString()));
 			}
 
@@ -471,15 +473,16 @@ namespace MockGenerator
 						case IPropertySymbol p when !p.IsIndexer:
 						{
 							var t = p.Type.QualifiedName();
+							var attrs = p.NullableAttributes();
 							var hasGet = p.GetMethod != null;
 							var hasSet = p.SetMethod != null;
 							string text;
 							if (hasGet && hasSet)
-								text = $"\n{t} {target}.{p.Name} {{ get => {asCall}.{p.Name}; set => {asCall}.{p.Name} = value; }}";
+								text = $"\n{attrs}{t} {target}.{p.Name} {{ get => {asCall}.{p.Name}; set => {asCall}.{p.Name} = value; }}";
 							else if (hasGet)
-								text = $"\n{t} {target}.{p.Name} => {asCall}.{p.Name};";
+								text = $"\n{attrs}{t} {target}.{p.Name} => {asCall}.{p.Name};";
 							else
-								text = $"\n{t} {target}.{p.Name} {{ set => {asCall}.{p.Name} = value; }}";
+								text = $"\n{attrs}{t} {target}.{p.Name} {{ set => {asCall}.{p.Name} = value; }}";
 							result.Add(new MemberFragment(MemberKind.Raw, "GPX:" + target + "." + p.Name, text));
 							break;
 						}
@@ -497,8 +500,8 @@ namespace MockGenerator
 							var ret = m.ReturnTypeName();
 							var args = m.MethodArgs();
 							// Explicit interface implementations must NOT restate generic constraints (CS0460).
-							var text = $"\n{ret} {target}.{m.Name}{g}{prmsNoDef} => {asCall}.{m.Name}{g}{args};";
-							result.Add(new MemberFragment(MemberKind.Raw, "GMX:" + target + "." + m.Name + g + prmsNoDef, text));
+							var text = $"\n{m.ReturnNullableAttributes()}{ret} {target}.{m.Name}{g}{prmsNoDef}{m.GenericsDefaultConstraints()} => {asCall}.{m.Name}{g}{args};";
+							result.Add(new MemberFragment(MemberKind.Raw, "GMX:" + target + "." + m.Name + g + m.MethodParamTypes(), text));
 							break;
 						}
 					}

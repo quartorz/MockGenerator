@@ -1,0 +1,13 @@
+#nullable enable
+
+namespace Sample.Generated
+{
+	/// <summary>
+	/// <see cref="global::Sample.Toggle"/>
+	/// </summary>
+	[MockGenerator.Input]
+	public interface IToggleInput : global::Sample.IPressable
+	{
+		event global::System.Action OnReleased;
+	}
+}

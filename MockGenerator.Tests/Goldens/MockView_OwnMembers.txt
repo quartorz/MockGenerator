@@ -1,3 +1,5 @@
+#nullable enable
+
 namespace MockView.Sample
 {
 	/// <summary>
@@ -5,10 +7,13 @@ namespace MockView.Sample
 	/// </summary>
 	public partial class MockPanel
 	{
-		public event global::System.Action OnClick;
+		public event global::System.Action? OnClick;
 		public void RaiseOnClick() => OnClick?.Invoke();
+		public System.Action<global::System.String>? OnTextSet { get; set; }
+		private global::System.String _textBacking = default!;
+		public global::System.String Text { get => _textBacking; set { _textBacking = value; OnTextSet?.Invoke(value); } }
 		public delegate void ShowDelegate(global::System.Int32 value);
-		public ShowDelegate ShowFunc { get; set; }
+		public ShowDelegate? ShowFunc { get; set; }
 		public void Show(global::System.Int32 value) => ShowFunc?.Invoke(value);
 	}
 }
