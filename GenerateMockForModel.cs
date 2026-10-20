@@ -359,7 +359,7 @@ namespace MockGenerator
 						if (!seenTarget.Add(ifaceQ)) continue;
 						var prefix = e.ContainingType.Name + "_";
 						using var _ = StringBuilderHolder.Get(out var sb);
-						sb.EmitMockEventSlot("", e, prefix + e.Name, ifaceQ);
+						sb.EmitMockEventSlot("", e, prefix + e.Name, prefix, ifaceQ);
 						result.Add(new MemberFragment(MemberKind.Raw, "GEX:" + ifaceQ + "." + e.Name, sb.ToString()));
 					}
 				}

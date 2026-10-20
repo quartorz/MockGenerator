@@ -697,11 +697,16 @@ namespace MockGenerator
 		}
 
 		/// <summary>
-		/// Emits a mock event as a prefixed public slot (with RaiseXxx helper) plus an explicit interface
+		/// Emits a mock event as a prefixed public slot (with a Raise helper) plus an explicit interface
 		/// implementation that forwards add/remove to it. Used when the same event name is declared with
 		/// different delegate types across several base interfaces.
+		/// <para>
+		/// The helper keeps the interface prefix in front, mirroring the accessor form the member would take
+		/// if the mock exposed one object per interface: prefix "IDialog_" + "OnClick" -&gt;
+		/// "IDialog_RaiseOnClick" (not "RaiseIDialog_OnClick").
+		/// </para>
 		/// </summary>
-		public static void EmitMockEventSlot(this StringBuilder sb, string i, IEventSymbol e, string slotName, string explicitTarget)
+		public static void EmitMockEventSlot(this StringBuilder sb, string i, IEventSymbol e, string slotName, string prefix, string explicitTarget)
 		{
 			var eventType = e.Type.QualifiedName();
 			var invoke = (e.Type as INamedTypeSymbol)?.DelegateInvokeMethod;
@@ -713,7 +718,7 @@ namespace MockGenerator
 				var paramsText = invoke.MethodParams();
 				var argsText = invoke.MethodArgs();
 				var hasOut = invoke.Parameters.Any(p => p.RefKind == RefKind.Out);
-				var pascal = char.ToUpper(slotName[0]) + slotName.Substring(1);
+				var pascal = char.ToUpper(e.Name[0]) + e.Name.Substring(1);
 				string body;
 				if (hasOut)
 				{
@@ -730,7 +735,7 @@ namespace MockGenerator
 						? $" => {slotName}?.Invoke{argsText};"
 						: $" => {slotName} != null ? {slotName}.Invoke{argsText} : default({ret});";
 				}
-				sb.Append($"\n{i}public {ret} Raise{pascal}{paramsText}{body}");
+				sb.Append($"\n{i}public {ret} {prefix}Raise{pascal}{paramsText}{body}");
 			}
 			if (explicitTarget != null)
 			{

@@ -564,9 +564,9 @@ namespace MockGenerator
 			{
 				if (member is IEventSymbol ev)
 				{
-					var (slotName, isExplicit, _) = DecideSlot(view, iface, ev, multiSource);
+					var (slotName, isExplicit, prefix) = DecideSlot(view, iface, ev, multiSource);
 					if (!emittedSlots.Add("E:" + slotName)) continue;
-					EmitEventSlot(sb, ev, slotName, (isExplicit || multiSource) ? ifaceQ : null);
+					EmitEventSlot(sb, ev, slotName, prefix, (isExplicit || multiSource) ? ifaceQ : null);
 				}
 				else if (member is IPropertySymbol prop)
 				{
@@ -594,7 +594,12 @@ namespace MockGenerator
 			return (prefix + member.Name, isExplicit, prefix);
 		}
 
-		static void EmitEventSlot(StringBuilder sb, IEventSymbol e, string slotName, string explicitTarget)
+		/// <summary>
+		/// Emits an event slot and its Raise helper. The helper keeps the interface prefix in front, mirroring
+		/// the accessor form the member would take if the mock exposed one object per interface:
+		/// prefix "IDialog_" + "OnClick" -&gt; "IDialog_RaiseOnClick" (not "RaiseIDialog_OnClick").
+		/// </summary>
+		static void EmitEventSlot(StringBuilder sb, IEventSymbol e, string slotName, string prefix, string explicitTarget)
 		{
 			var eventType = e.Type.QualifiedName();
 			var invoke = (e.Type as INamedTypeSymbol)?.DelegateInvokeMethod;
@@ -622,7 +627,8 @@ namespace MockGenerator
 						? $" => {slotName}?.Invoke{argsText};"
 						: $" => {slotName} != null ? {slotName}.Invoke{argsText} : default({ret});";
 				}
-				sb.Append($"\n		public {ret} Raise{slotName}{paramsText}{body}");
+				var pascal = char.ToUpper(e.Name[0]) + e.Name.Substring(1);
+				sb.Append($"\n		public {ret} {prefix}Raise{pascal}{paramsText}{body}");
 			}
 			if (explicitTarget != null)
 			{
